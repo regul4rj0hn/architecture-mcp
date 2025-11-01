@@ -2,9 +2,9 @@
 
 ## Overview
 
-The MCP Architecture Service is a lightweight REST API service that provides structured access to architectural documentation stored in a Git repository. The service enables IDE integration and AI agent consumption of guidelines, design patterns, and Architecture Decision Records (ADRs) through a well-defined HTTP API.
+The MCP Architecture Service is a Model Context Protocol (MCP) server that provides structured access to architectural documentation stored in a Git repository. The service implements the MCP specification to enable AI agents to discover and retrieve guidelines, design patterns, and Architecture Decision Records (ADRs) as contextual resources.
 
-The service operates as a containerized microservice that automatically monitors local documentation files and maintains an in-memory cache for fast retrieval. It supports automatic deployment when documentation changes are pushed to the monitored Git branch.
+The service operates as an MCP server that communicates via JSON-RPC over stdio, automatically monitors local documentation files, and maintains an in-memory cache for fast resource retrieval. It exposes documentation as MCP resources that can be discovered and read by MCP clients.
 
 ## Architecture
 
@@ -12,14 +12,14 @@ The service operates as a containerized microservice that automatically monitors
 
 ```mermaid
 graph TB
-    subgraph "IDE Environment"
-        IDE[IDE/Editor]
-        AI[AI Agent]
+    subgraph "MCP Client Environment"
+        IDE[IDE/Editor with MCP Client]
+        AI[AI Agent with MCP Client]
     end
     
     subgraph "Container Platform"
         subgraph "MCP Service Pod"
-            API[REST API Server]
+            MCP[MCP Server (JSON-RPC over stdio)]
             Cache[In-Memory Cache]
             Monitor[File System Monitor]
             Scanner[Documentation Scanner]
@@ -38,9 +38,9 @@ graph TB
         Deploy[Deployment System]
     end
     
-    IDE --> API
-    AI --> API
-    API --> Cache
+    IDE -.->|MCP Protocol| MCP
+    AI -.->|MCP Protocol| MCP
+    MCP --> Cache
     Monitor --> Cache
     Scanner --> Cache
     Scanner --> Docs
@@ -49,7 +49,7 @@ graph TB
     Cache --> Patterns
     Cache --> ADRs
     Git --> Deploy
-    Deploy --> API
+    Deploy --> MCP
 ```
 
 ### Service Architecture Patterns
@@ -61,35 +61,44 @@ graph TB
 
 ## Components and Interfaces
 
-### REST API Layer
+### MCP Protocol Layer
 
-**Primary Interface**: HTTP REST API exposing documentation resources
+**Primary Interface**: JSON-RPC over stdio implementing MCP specification
 
-**Key Endpoints**:
-- `GET /api/v1/health` - Health check endpoint
-- `GET /api/v1/config` - Service configuration and metadata
-- `GET /api/v1/context/guidelines` - List available guidelines
-- `GET /api/v1/context/patterns` - List available design patterns
-- `GET /api/v1/context/adrs` - List available ADRs
-- `GET /api/v1/context/guideline/{path}` - Retrieve specific guideline
-- `GET /api/v1/context/pattern/{path}` - Retrieve specific pattern
-- `GET /api/v1/context/adr/{adr_id}` - Retrieve specific ADR
+**Required MCP Methods**:
+- `initialize` - Server initialization and capability negotiation
+- `resources/list` - List all available documentation resources
+- `resources/read` - Read specific documentation resource content
+- `notifications/initialized` - Acknowledge successful initialization
 
-**Response Format**: JSON with structured content including:
+**MCP Resource URIs**:
+- `architecture://guidelines/{path}` - Guidelines documentation
+- `architecture://patterns/{path}` - Design patterns documentation  
+- `architecture://adr/{adr_id}` - Architecture Decision Records
+
+**MCP Message Format**: JSON-RPC 2.0 compliant messages:
 ```json
 {
-  "metadata": {
-    "title": "string",
-    "category": "string", 
-    "lastModified": "ISO8601",
-    "path": "string"
-  },
-  "content": {
-    "sections": [
+  "jsonrpc": "2.0",
+  "id": "request-id",
+  "method": "resources/read",
+  "params": {
+    "uri": "architecture://guidelines/api-design"
+  }
+}
+```
+
+**Resource Response Format**:
+```json
+{
+  "jsonrpc": "2.0", 
+  "id": "request-id",
+  "result": {
+    "contents": [
       {
-        "heading": "string",
-        "level": "number",
-        "content": "string"
+        "uri": "architecture://guidelines/api-design",
+        "mimeType": "text/markdown",
+        "text": "# API Design Guidelines\n..."
       }
     ]
   }
@@ -207,23 +216,46 @@ type Decider struct {
 }
 ```
 
-### API Response Models
+### MCP Protocol Models
 ```go
-type ListResponse struct {
-  Items    []interface{} `json:"items"`
-  Total    int           `json:"total"`
-  Category string        `json:"category,omitempty"`
+// MCP JSON-RPC Message
+type MCPMessage struct {
+  JSONRPC string      `json:"jsonrpc"`
+  ID      interface{} `json:"id,omitempty"`
+  Method  string      `json:"method,omitempty"`
+  Params  interface{} `json:"params,omitempty"`
+  Result  interface{} `json:"result,omitempty"`
+  Error   *MCPError   `json:"error,omitempty"`
 }
 
-type DocumentResponse struct {
-  Metadata DocumentMetadata `json:"metadata"`
-  Content  DocumentContent  `json:"content"`
+// MCP Resource
+type MCPResource struct {
+  URI         string            `json:"uri"`
+  Name        string            `json:"name"`
+  Description string            `json:"description,omitempty"`
+  MimeType    string            `json:"mimeType,omitempty"`
+  Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-type ErrorResponse struct {
-  Error     string `json:"error"`
-  Code      int    `json:"code"`
-  Timestamp string `json:"timestamp"`
+// MCP Resource Content
+type MCPResourceContent struct {
+  URI      string `json:"uri"`
+  MimeType string `json:"mimeType"`
+  Text     string `json:"text,omitempty"`
+  Blob     string `json:"blob,omitempty"`
+}
+
+// MCP Error
+type MCPError struct {
+  Code    int         `json:"code"`
+  Message string      `json:"message"`
+  Data    interface{} `json:"data,omitempty"`
+}
+
+// MCP Server Info
+type MCPServerInfo struct {
+  Name    string `json:"name"`
+  Version string `json:"version"`
 }
 ```
 
@@ -301,8 +333,8 @@ type ErrorResponse struct {
 - **Base Image**: Alpine Linux for minimal attack surface
 - **Runtime**: Go runtime with static binary compilation
 - **User**: Non-root user for security compliance
-- **Port**: Configurable via environment variable (default: 3000)
-- **Health Check**: Built-in health endpoint for orchestration
+- **Communication**: JSON-RPC over stdio (no network ports required)
+- **Health Check**: Process health monitoring and documentation directory access
 
 ### Kubernetes Deployment
 ```yaml
