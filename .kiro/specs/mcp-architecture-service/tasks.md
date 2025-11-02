@@ -122,7 +122,7 @@
   - Add resource categorization and filtering
   - _Requirements: 2.1, 2.2, 2.4, 3.1, 3.2, 4.1, 4.2_
 
-- [ ] 7.2 Implement MCP resources/read method
+- [x] 7.2 Implement MCP resources/read method
   - Create `resources/read` handler for specific resource retrieval
   - Parse MCP resource URIs (architecture://guidelines/{path}, etc.)
   - Return resource content in MCP format with proper mimeType

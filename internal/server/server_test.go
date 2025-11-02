@@ -221,12 +221,30 @@ func TestHandleResourcesList(t *testing.T) {
 func TestHandleResourcesRead(t *testing.T) {
 	server := NewMCPServer()
 
+	// Add a test document to the cache
+	testDoc := &models.Document{
+		Metadata: models.DocumentMetadata{
+			Title:        "API Design Guidelines",
+			Category:     "guideline",
+			Path:         "docs/guidelines/api-design.md",
+			LastModified: time.Now(),
+			Size:         1024,
+			Checksum:     "abc123",
+		},
+		Content: models.DocumentContent{
+			RawContent: "# API Design Guidelines\nThis is a test document with guidelines for API design.",
+		},
+	}
+
+	server.cache.Set(testDoc.Metadata.Path, testDoc)
+
+	// Test successful resource read
 	readMessage := &models.MCPMessage{
 		JSONRPC: "2.0",
 		ID:      "test-read",
 		Method:  "resources/read",
 		Params: models.MCPResourcesReadParams{
-			URI: "architecture://guidelines/test",
+			URI: "architecture://guidelines/api-design",
 		},
 	}
 
@@ -244,13 +262,105 @@ func TestHandleResourcesRead(t *testing.T) {
 		t.Errorf("Expected ID 'test-read', got '%v'", response.ID)
 	}
 
-	// Should return error for now (not implemented)
-	if response.Error == nil {
-		t.Error("Expected error for unimplemented method")
+	if response.Error != nil {
+		t.Errorf("Expected no error, got %v", response.Error)
 	}
 
+	// Verify result structure
+	result, ok := response.Result.(models.MCPResourcesReadResult)
+	if !ok {
+		t.Fatal("Expected result to be MCPResourcesReadResult")
+	}
+
+	if len(result.Contents) != 1 {
+		t.Errorf("Expected 1 content item, got %d", len(result.Contents))
+	}
+
+	content := result.Contents[0]
+	if content.URI != "architecture://guidelines/api-design" {
+		t.Errorf("Expected URI 'architecture://guidelines/api-design', got '%s'", content.URI)
+	}
+
+	if content.MimeType != "text/markdown" {
+		t.Errorf("Expected mimeType 'text/markdown', got '%s'", content.MimeType)
+	}
+
+	if content.Text != testDoc.Content.RawContent {
+		t.Errorf("Expected content to match document raw content")
+	}
+}
+
+func TestHandleResourcesReadErrors(t *testing.T) {
+	server := NewMCPServer()
+
+	// Test missing URI parameter
+	readMessage := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-read-no-uri",
+		Method:  "resources/read",
+		Params:  models.MCPResourcesReadParams{},
+	}
+
+	response := server.handleResourcesRead(readMessage)
+	if response.Error == nil {
+		t.Error("Expected error for missing URI parameter")
+	}
 	if response.Error.Code != -32602 {
 		t.Errorf("Expected error code -32602, got %d", response.Error.Code)
+	}
+
+	// Test invalid URI scheme
+	readMessage2 := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-read-invalid-scheme",
+		Method:  "resources/read",
+		Params: models.MCPResourcesReadParams{
+			URI: "invalid://guidelines/test",
+		},
+	}
+
+	response2 := server.handleResourcesRead(readMessage2)
+	if response2.Error == nil {
+		t.Error("Expected error for invalid URI scheme")
+	}
+	if response2.Error.Code != -32602 {
+		t.Errorf("Expected error code -32602, got %d", response2.Error.Code)
+	}
+
+	// Test unsupported category
+	readMessage3 := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-read-invalid-category",
+		Method:  "resources/read",
+		Params: models.MCPResourcesReadParams{
+			URI: "architecture://invalid/test",
+		},
+	}
+
+	response3 := server.handleResourcesRead(readMessage3)
+	if response3.Error == nil {
+		t.Error("Expected error for unsupported category")
+	}
+	if response3.Error.Code != -32602 {
+		t.Errorf("Expected error code -32602, got %d", response3.Error.Code)
+	}
+
+	// Test resource not found
+	readMessage4 := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-read-not-found",
+		Method:  "resources/read",
+		Params: models.MCPResourcesReadParams{
+			URI: "architecture://guidelines/nonexistent",
+		},
+	}
+
+	response4 := server.handleResourcesRead(readMessage4)
+	if response4.Error == nil {
+		t.Error("Expected error for resource not found")
+	}
+	if response4.Error.Code != -32603 {
+		t.Errorf("Expected error code -32603, got %d", response4.Error.Code)
 	}
 }
 

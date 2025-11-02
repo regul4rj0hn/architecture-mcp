@@ -210,8 +210,54 @@ func (s *MCPServer) handleResourcesList(message *models.MCPMessage) *models.MCPM
 
 // handleResourcesRead handles the resources/read method
 func (s *MCPServer) handleResourcesRead(message *models.MCPMessage) *models.MCPMessage {
-	// Return error for now - will be implemented in later tasks
-	return s.createErrorResponse(message.ID, -32602, "Resource reading not yet implemented")
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Parse request parameters
+	var params models.MCPResourcesReadParams
+	if message.Params != nil {
+		paramsBytes, err := json.Marshal(message.Params)
+		if err != nil {
+			return s.createErrorResponse(message.ID, -32602, "Invalid parameters")
+		}
+		if err := json.Unmarshal(paramsBytes, &params); err != nil {
+			return s.createErrorResponse(message.ID, -32602, "Invalid parameters format")
+		}
+	}
+
+	// Validate URI parameter
+	if params.URI == "" {
+		return s.createErrorResponse(message.ID, -32602, "Missing required parameter: uri")
+	}
+
+	// Parse the MCP resource URI
+	category, path, err := s.parseResourceURI(params.URI)
+	if err != nil {
+		return s.createErrorResponse(message.ID, -32602, fmt.Sprintf("Invalid resource URI: %s", err.Error()))
+	}
+
+	// Find the document in cache
+	document, err := s.findDocumentByResourcePath(category, path)
+	if err != nil {
+		return s.createErrorResponse(message.ID, -32603, fmt.Sprintf("Resource not found: %s", err.Error()))
+	}
+
+	// Create resource content response
+	content := models.MCPResourceContent{
+		URI:      params.URI,
+		MimeType: "text/markdown",
+		Text:     document.Content.RawContent,
+	}
+
+	result := models.MCPResourcesReadResult{
+		Contents: []models.MCPResourceContent{content},
+	}
+
+	return &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      message.ID,
+		Result:  result,
+	}
 }
 
 // createErrorResponse creates an MCP error response
@@ -511,4 +557,124 @@ func (s *MCPServer) extractADRId(path string) string {
 
 	// If no pattern matches, use the filename without extension
 	return filename
+}
+
+// parseResourceURI parses an MCP resource URI and returns category and path
+func (s *MCPServer) parseResourceURI(uri string) (category, path string, err error) {
+	// Expected URI patterns:
+	// architecture://guidelines/{path}
+	// architecture://patterns/{path}
+	// architecture://adr/{adr_id}
+
+	if !strings.HasPrefix(uri, "architecture://") {
+		return "", "", fmt.Errorf("invalid URI scheme, expected 'architecture://'")
+	}
+
+	// Remove the scheme prefix
+	remainder := strings.TrimPrefix(uri, "architecture://")
+
+	// Split into category and path
+	parts := strings.SplitN(remainder, "/", 2)
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("invalid URI format, expected 'architecture://{category}/{path}'")
+	}
+
+	category = parts[0]
+	path = parts[1]
+
+	// Validate category
+	switch category {
+	case "guidelines":
+		return "guideline", path, nil
+	case "patterns":
+		return "pattern", path, nil
+	case "adr":
+		return "adr", path, nil
+	default:
+		return "", "", fmt.Errorf("unsupported resource category: %s", category)
+	}
+}
+
+// findDocumentByResourcePath finds a document in the cache by category and resource path
+func (s *MCPServer) findDocumentByResourcePath(category, resourcePath string) (*models.Document, error) {
+	// Get all documents for the category
+	documents := s.cache.GetByCategory(category)
+
+	if len(documents) == 0 {
+		return nil, fmt.Errorf("no documents found for category: %s", category)
+	}
+
+	// For each document, generate its resource URI and compare with the requested path
+	for _, doc := range documents {
+		docResourceURI := s.generateResourceURI(doc.Metadata.Category, doc.Metadata.Path)
+
+		// Extract the path part from the generated URI for comparison
+		_, docResourcePath, err := s.parseResourceURI(docResourceURI)
+		if err != nil {
+			continue // Skip malformed URIs
+		}
+
+		// Compare paths (case-insensitive)
+		if strings.EqualFold(docResourcePath, resourcePath) {
+			return doc, nil
+		}
+	}
+
+	// If no exact match found, try direct path lookup in cache
+	// This handles cases where the resource path might be a direct file path
+	possiblePaths := s.generatePossibleFilePaths(category, resourcePath)
+
+	for _, possiblePath := range possiblePaths {
+		if doc, err := s.cache.Get(possiblePath); err == nil {
+			return doc, nil
+		}
+	}
+
+	return nil, fmt.Errorf("document not found for path: %s", resourcePath)
+}
+
+// generatePossibleFilePaths generates possible file paths for a given category and resource path
+func (s *MCPServer) generatePossibleFilePaths(category, resourcePath string) []string {
+	var paths []string
+
+	// Add .md extension if not present
+	if !strings.HasSuffix(resourcePath, ".md") {
+		resourcePath += ".md"
+	}
+
+	switch category {
+	case "guideline":
+		paths = append(paths, filepath.Join("docs/guidelines", resourcePath))
+		paths = append(paths, filepath.Join("docs", "guidelines", resourcePath))
+	case "pattern":
+		paths = append(paths, filepath.Join("docs/patterns", resourcePath))
+		paths = append(paths, filepath.Join("docs", "patterns", resourcePath))
+	case "adr":
+		// For ADRs, try different naming patterns
+		adrId := strings.TrimSuffix(resourcePath, ".md")
+
+		// Try various ADR naming patterns
+		patterns := []string{
+			fmt.Sprintf("%s.md", adrId),
+			fmt.Sprintf("adr-%s.md", adrId),
+			fmt.Sprintf("ADR-%s.md", adrId),
+			fmt.Sprintf("%03s.md", adrId), // Zero-padded numbers
+		}
+
+		for _, pattern := range patterns {
+			paths = append(paths, filepath.Join("docs/adr", pattern))
+			paths = append(paths, filepath.Join("docs", "adr", pattern))
+		}
+
+		// Also try to find by ADR ID in existing documents
+		allDocs := s.cache.GetByCategory("adr")
+		for _, doc := range allDocs {
+			docURI := s.generateResourceURI(doc.Metadata.Category, doc.Metadata.Path)
+			if strings.Contains(docURI, adrId) {
+				paths = append(paths, doc.Metadata.Path)
+			}
+		}
+	}
+
+	return paths
 }
