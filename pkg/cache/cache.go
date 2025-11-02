@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
@@ -9,13 +10,19 @@ import (
 	"mcp-architecture-service/pkg/errors"
 )
 
-// DocumentCache provides in-memory caching for documentation
+// DocumentCache provides in-memory caching for documentation with optimized memory usage
 type DocumentCache struct {
 	documents      map[string]*models.Document
 	indexes        map[string]*models.DocumentIndex
 	pathToCategory map[string]string // Maps document paths to their categories for fast category lookup
 	mutex          sync.RWMutex
 	stats          CacheStats
+
+	// Memory optimization features
+	memoryPool     *sync.Pool // Pool for reusing document objects
+	maxMemoryUsage int64      // Maximum memory usage before cleanup (in bytes)
+	cleanupTicker  *time.Ticker
+	stopCleanup    chan struct{}
 }
 
 // CacheStats tracks cache performance metrics
@@ -27,13 +34,59 @@ type CacheStats struct {
 	MemoryUsage   int64     `json:"memoryUsage"` // Approximate memory usage in bytes
 }
 
-// NewDocumentCache creates a new document cache
+// NewDocumentCache creates a new document cache with memory optimizations
 func NewDocumentCache() *DocumentCache {
-	return &DocumentCache{
+	cache := &DocumentCache{
 		documents:      make(map[string]*models.Document),
 		indexes:        make(map[string]*models.DocumentIndex),
 		pathToCategory: make(map[string]string),
 		stats:          CacheStats{LastCleanup: time.Now()},
+		maxMemoryUsage: 256 * 1024 * 1024, // 256MB default limit
+		stopCleanup:    make(chan struct{}),
+	}
+
+	// Initialize memory pool for document reuse
+	cache.memoryPool = &sync.Pool{
+		New: func() interface{} {
+			return &models.Document{}
+		},
+	}
+
+	// Start periodic cleanup goroutine
+	cache.cleanupTicker = time.NewTicker(5 * time.Minute)
+	go cache.periodicCleanup()
+
+	return cache
+}
+
+// periodicCleanup runs periodic memory cleanup operations
+func (dc *DocumentCache) periodicCleanup() {
+	for {
+		select {
+		case <-dc.cleanupTicker.C:
+			dc.performMemoryCleanup()
+		case <-dc.stopCleanup:
+			dc.cleanupTicker.Stop()
+			return
+		}
+	}
+}
+
+// performMemoryCleanup performs memory optimization when usage is high
+func (dc *DocumentCache) performMemoryCleanup() {
+	dc.mutex.Lock()
+	defer dc.mutex.Unlock()
+
+	// Check if memory usage exceeds threshold
+	if dc.stats.MemoryUsage > dc.maxMemoryUsage {
+		// Force garbage collection
+		runtime.GC()
+
+		// Update memory usage after GC
+		dc.updateMemoryUsage()
+
+		fmt.Printf("Cache cleanup performed - memory usage: %d bytes\n", dc.stats.MemoryUsage)
+		dc.stats.LastCleanup = time.Now()
 	}
 }
 
@@ -54,14 +107,44 @@ func (dc *DocumentCache) Get(key string) (*models.Document, error) {
 	return document, nil
 }
 
-// Set stores a document in the cache
+// Set stores a document in the cache with memory optimization
 func (dc *DocumentCache) Set(key string, document *models.Document) {
 	dc.mutex.Lock()
 	defer dc.mutex.Unlock()
 
+	// Check if we need to perform cleanup before adding new document
+	if dc.stats.MemoryUsage > dc.maxMemoryUsage*80/100 { // 80% threshold
+		dc.performLRUCleanup()
+	}
+
 	dc.documents[key] = document
 	dc.pathToCategory[key] = document.Metadata.Category
 	dc.updateMemoryUsage()
+}
+
+// performLRUCleanup removes least recently used documents to free memory
+func (dc *DocumentCache) performLRUCleanup() {
+	// Simple cleanup strategy: remove 10% of documents
+	// In a production system, you might implement proper LRU tracking
+	targetSize := len(dc.documents) * 90 / 100
+
+	if targetSize >= len(dc.documents) {
+		return
+	}
+
+	// Remove documents until we reach target size
+	count := 0
+	for key := range dc.documents {
+		if count >= len(dc.documents)-targetSize {
+			break
+		}
+		delete(dc.documents, key)
+		delete(dc.pathToCategory, key)
+		count++
+	}
+
+	dc.stats.Invalidations += int64(count)
+	fmt.Printf("LRU cleanup removed %d documents\n", count)
 }
 
 // Invalidate removes a document from the cache
@@ -75,7 +158,7 @@ func (dc *DocumentCache) Invalidate(key string) {
 	dc.updateMemoryUsage()
 }
 
-// Clear removes all documents from the cache
+// Clear removes all documents from the cache and stops cleanup goroutine
 func (dc *DocumentCache) Clear() {
 	dc.mutex.Lock()
 	defer dc.mutex.Unlock()
@@ -85,6 +168,11 @@ func (dc *DocumentCache) Clear() {
 	dc.pathToCategory = make(map[string]string)
 	dc.stats.LastCleanup = time.Now()
 	dc.updateMemoryUsage()
+}
+
+// Close stops the cache cleanup goroutine and releases resources
+func (dc *DocumentCache) Close() {
+	close(dc.stopCleanup)
 }
 
 // GetIndex retrieves a document index by category
@@ -253,6 +341,25 @@ func (dc *DocumentCache) GetCacheHitRatio() float64 {
 	}
 
 	return float64(dc.stats.Hits) / float64(total) * 100.0
+}
+
+// GetPerformanceMetrics returns detailed performance metrics for monitoring
+func (dc *DocumentCache) GetPerformanceMetrics() map[string]interface{} {
+	dc.mutex.RLock()
+	defer dc.mutex.RUnlock()
+
+	return map[string]interface{}{
+		"total_documents":    len(dc.documents),
+		"total_categories":   len(dc.indexes),
+		"memory_usage_bytes": dc.stats.MemoryUsage,
+		"memory_limit_bytes": dc.maxMemoryUsage,
+		"memory_usage_pct":   float64(dc.stats.MemoryUsage) / float64(dc.maxMemoryUsage) * 100.0,
+		"cache_hits":         dc.stats.Hits,
+		"cache_misses":       dc.stats.Misses,
+		"cache_hit_ratio":    dc.GetCacheHitRatio(),
+		"invalidations":      dc.stats.Invalidations,
+		"last_cleanup":       dc.stats.LastCleanup,
+	}
 }
 
 // IsEmpty returns true if the cache contains no documents

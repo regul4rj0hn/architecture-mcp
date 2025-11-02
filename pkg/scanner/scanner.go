@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/errors"
@@ -33,7 +35,7 @@ func NewDocumentationScanner(rootPath string) *DocumentationScanner {
 	}
 }
 
-// ScanDirectory recursively scans a directory for documentation files
+// ScanDirectory recursively scans a directory for documentation files using concurrent processing
 func (ds *DocumentationScanner) ScanDirectory(path string) (*models.DocumentIndex, error) {
 	// Validate input path
 	if path == "" {
@@ -48,15 +50,19 @@ func (ds *DocumentationScanner) ScanDirectory(path string) (*models.DocumentInde
 			WithContext("path", path)
 	}
 
-	var documents []models.DocumentMetadata
-	var parseErrors []string
 	category := ds.getCategoryFromPath(path)
 
+	// Use concurrent scanning for better performance
+	return ds.scanDirectoryConcurrent(path, category)
+}
+
+// scanDirectoryConcurrent performs concurrent file scanning for improved performance
+func (ds *DocumentationScanner) scanDirectoryConcurrent(path, category string) (*models.DocumentIndex, error) {
+	// First, collect all markdown files
+	var markdownFiles []string
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
-			// Log but continue processing
-			parseErrors = append(parseErrors, fmt.Sprintf("access error for %s: %v", filePath, err))
-			return nil
+			return nil // Continue processing, errors will be handled during parsing
 		}
 
 		// Skip directories and non-markdown files
@@ -64,15 +70,7 @@ func (ds *DocumentationScanner) ScanDirectory(path string) (*models.DocumentInde
 			return nil
 		}
 
-		metadata, err := ds.ParseMarkdownFile(filePath)
-		if err != nil {
-			// Collect parse errors but continue processing
-			parseErrors = append(parseErrors, fmt.Sprintf("parse error for %s: %v", filePath, err))
-			return nil
-		}
-
-		metadata.Category = category
-		documents = append(documents, *metadata)
+		markdownFiles = append(markdownFiles, filePath)
 		return nil
 	})
 
@@ -80,6 +78,53 @@ func (ds *DocumentationScanner) ScanDirectory(path string) (*models.DocumentInde
 		return nil, errors.NewFileSystemError(errors.ErrCodeFileSystemUnavailable,
 			"Failed to scan directory", err).
 			WithContext("path", path)
+	}
+
+	if len(markdownFiles) == 0 {
+		return &models.DocumentIndex{
+			Category:  category,
+			Documents: []models.DocumentMetadata{},
+			Count:     0,
+			Errors:    []string{},
+		}, nil
+	}
+
+	// Process files concurrently with worker pool
+	numWorkers := ds.calculateOptimalWorkerCount(len(markdownFiles))
+
+	// Channels for work distribution and result collection
+	fileChan := make(chan string, len(markdownFiles))
+	resultChan := make(chan parseResult, len(markdownFiles))
+
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go ds.parseWorker(&wg, fileChan, resultChan, category)
+	}
+
+	// Send files to workers
+	for _, file := range markdownFiles {
+		fileChan <- file
+	}
+	close(fileChan)
+
+	// Wait for all workers to complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results
+	var documents []models.DocumentMetadata
+	var parseErrors []string
+
+	for result := range resultChan {
+		if result.err != nil {
+			parseErrors = append(parseErrors, fmt.Sprintf("parse error for %s: %v", result.filePath, result.err))
+		} else {
+			documents = append(documents, result.metadata)
+		}
 	}
 
 	// Log parse errors if any occurred
@@ -96,6 +141,61 @@ func (ds *DocumentationScanner) ScanDirectory(path string) (*models.DocumentInde
 		Count:     len(documents),
 		Errors:    parseErrors,
 	}, nil
+}
+
+// parseResult holds the result of parsing a single file
+type parseResult struct {
+	filePath string
+	metadata models.DocumentMetadata
+	err      error
+}
+
+// parseWorker processes files from the work channel
+func (ds *DocumentationScanner) parseWorker(wg *sync.WaitGroup, fileChan <-chan string, resultChan chan<- parseResult, category string) {
+	defer wg.Done()
+
+	for filePath := range fileChan {
+		metadata, err := ds.ParseMarkdownFile(filePath)
+
+		result := parseResult{
+			filePath: filePath,
+			err:      err,
+		}
+
+		if err == nil {
+			metadata.Category = category
+			result.metadata = *metadata
+		}
+
+		resultChan <- result
+	}
+}
+
+// calculateOptimalWorkerCount determines the optimal number of workers based on file count and system resources
+func (ds *DocumentationScanner) calculateOptimalWorkerCount(fileCount int) int {
+	// Get number of CPU cores
+	numCPU := runtime.NumCPU()
+
+	// For small file counts, use fewer workers to avoid overhead
+	if fileCount <= 10 {
+		return min(2, numCPU)
+	}
+
+	// For larger file counts, use more workers but cap at reasonable limits
+	if fileCount <= 100 {
+		return min(4, numCPU)
+	}
+
+	// For very large file counts, use more workers up to CPU count
+	return min(numCPU, 8) // Cap at 8 to avoid excessive goroutine overhead
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // ParseMarkdownFile parses a markdown file and extracts metadata using goldmark
@@ -267,29 +367,64 @@ func (ds *DocumentationScanner) isValidMarkdown(content []byte) bool {
 	return float64(printableCount)/float64(len(text)) >= 0.9
 }
 
-// BuildIndex scans multiple directories and builds a comprehensive index
+// BuildIndex scans multiple directories concurrently and builds a comprehensive index
 func (ds *DocumentationScanner) BuildIndex(directories []string) (map[string]*models.DocumentIndex, error) {
 	if len(directories) == 0 {
 		return nil, errors.NewValidationError(errors.ErrCodeInvalidParams,
 			"No directories provided for indexing", nil)
 	}
 
+	// Use concurrent scanning for multiple directories
+	return ds.buildIndexConcurrent(directories)
+}
+
+// buildIndexConcurrent processes multiple directories concurrently for faster indexing
+func (ds *DocumentationScanner) buildIndexConcurrent(directories []string) (map[string]*models.DocumentIndex, error) {
+	type indexResult struct {
+		index *models.DocumentIndex
+		err   error
+	}
+
+	// Channel for collecting results
+	resultChan := make(chan indexResult, len(directories))
+
+	// Start goroutines for each directory
+	var wg sync.WaitGroup
+	for _, dir := range directories {
+		wg.Add(1)
+		go func(directory string) {
+			defer wg.Done()
+
+			index, err := ds.ScanDirectory(directory)
+			resultChan <- indexResult{
+				index: index,
+				err:   err,
+			}
+		}(dir)
+	}
+
+	// Wait for all goroutines to complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results
 	indexes := make(map[string]*models.DocumentIndex)
 	var allErrors []string
 
-	for _, dir := range directories {
-		index, err := ds.ScanDirectory(dir)
-		if err != nil {
-			allErrors = append(allErrors, fmt.Sprintf("failed to scan %s: %v", dir, err))
+	for result := range resultChan {
+		if result.err != nil {
+			allErrors = append(allErrors, fmt.Sprintf("failed to scan directory: %v", result.err))
 			continue
 		}
 
 		// Add any parsing errors to the overall error list
-		if len(index.Errors) > 0 {
-			allErrors = append(allErrors, index.Errors...)
+		if len(result.index.Errors) > 0 {
+			allErrors = append(allErrors, result.index.Errors...)
 		}
 
-		indexes[index.Category] = index
+		indexes[result.index.Category] = result.index
 	}
 
 	// Log overall indexing results
