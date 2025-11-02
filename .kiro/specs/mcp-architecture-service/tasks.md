@@ -54,7 +54,7 @@
   - Test basic server startup and shutdown
   - _Requirements: 1.1, 1.4_
 
-- [ ] 4. Implement core data models and validation
+- [x] 4. Implement core data models and validation
 - [x] 4.1 Create document model structs
   - Implement DocumentMetadata, DocumentContent, DocumentSection structs
   - Create ADRDocument struct with ADR-specific fields
@@ -67,7 +67,7 @@
   - Create path sanitization functions to prevent directory traversal
   - _Requirements: 3.5, 7.3_
 
-- [ ]* 4.3 Write unit tests for data models
+- [x] 4.3 Write unit tests for data models
   - Create unit tests for document model validation using Go testing package
   - Write tests for Markdown parsing utilities
   - Test path sanitization functions
