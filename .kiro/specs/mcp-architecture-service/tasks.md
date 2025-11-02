@@ -27,28 +27,28 @@
   - Test security configurations and non-root execution
   - _Requirements: 10.1, 10.4_
 
-- [ ] 3. Create minimal MCP server with basic functionality
-- [ ] 3.1 Create basic MCP protocol structs
+- [x] 3. Create minimal MCP server with basic functionality
+- [x] 3.1 Create basic MCP protocol structs
   - Write Go structs for MCP messages (MCPMessage, MCPError, MCPServerInfo)
   - Implement basic MCP resource structs (MCPResource, MCPResourceContent)
   - Add JSON tags for MCP protocol compliance
   - _Requirements: 1.1, 1.2, 1.4_
 
-- [ ] 3.2 Implement basic MCP JSON-RPC server
+- [x] 3.2 Implement basic MCP JSON-RPC server
   - Set up JSON-RPC server communicating over stdio
   - Implement MCP message parsing and routing
   - Create `initialize` method handler with server info and capabilities
   - Implement `notifications/initialized` handler
   - _Requirements: 1.1, 1.2, 1.4, 6.5_
 
-- [ ] 3.3 Create minimal main.go and server startup
+- [x] 3.3 Create minimal main.go and server startup
   - Implement main.go with basic MCP server startup
   - Add graceful shutdown handling using context.Context and signal handling
   - Ensure MCP server can respond to initialization requests
   - Return empty resource lists initially
   - _Requirements: 6.1, 6.5_
 
-- [ ]* 3.4 Write basic MCP protocol tests
+- [x] 3.4 Write basic MCP protocol tests
   - Create tests for MCP initialization flow
   - Write tests for JSON-RPC message parsing
   - Test basic server startup and shutdown
