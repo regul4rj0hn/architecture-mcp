@@ -582,6 +582,11 @@ func (s *MCPServer) parseResourceURI(uri string) (category, path string, err err
 	category = parts[0]
 	path = parts[1]
 
+	// Validate path is not empty and doesn't start with slash
+	if path == "" || strings.HasPrefix(path, "/") {
+		return "", "", fmt.Errorf("invalid URI format, path cannot be empty or start with '/'")
+	}
+
 	// Validate category
 	switch category {
 	case "guidelines":

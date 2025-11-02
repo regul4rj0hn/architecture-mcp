@@ -114,7 +114,7 @@
   - Test memory management functionality and concurrent access
   - _Requirements: 5.1, 5.3_
 
-- [ ] 7. Enhance MCP server with full resource functionality
+- [x] 7. Enhance MCP server with full resource functionality
 - [x] 7.1 Implement MCP resources/list method
   - Create `resources/list` handler returning all available documentation resources
   - Generate MCP resource URIs for guidelines, patterns, and ADRs
@@ -135,7 +135,7 @@
   - Add real-time resource updates when files change
   - _Requirements: 5.1, 5.3, 5.4, 6.1, 6.3_
 
-- [ ]* 7.4 Write integration tests for MCP resource methods
+- [x] 7.4 Write integration tests for MCP resource methods
   - Create integration tests for resources/list and resources/read handlers
   - Write tests for resource URI parsing and content retrieval
   - Test MCP protocol compliance and error scenarios
