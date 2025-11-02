@@ -83,12 +83,33 @@ docker-build:
 	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
 	@echo "Docker image built: $(DOCKER_IMAGE):$(DOCKER_TAG)"
 
-# Run Docker container
+# Run Docker container (MCP server communicates via stdio)
+# Note: MCP servers are typically invoked by MCP clients, not run directly
 docker-run:
 	@echo "Running Docker container..."
-	docker run --rm -it \
+	@echo "Note: MCP server will wait for JSON-RPC messages on stdin"
+	docker run --rm -i \
+		$(DOCKER_IMAGE):$(DOCKER_TAG)
+
+# Run Docker container with volume mount for development
+docker-run-dev:
+	@echo "Running Docker container with development volume..."
+	@echo "Note: MCP server will wait for JSON-RPC messages on stdin"
+	docker run --rm -i \
 		-v $(PWD)/docs:/app/docs:ro \
 		$(DOCKER_IMAGE):$(DOCKER_TAG)
+
+# Test Docker container with a simple MCP initialization message
+docker-test:
+	@echo "Testing Docker container with MCP initialization..."
+	@timeout 10s bash -c 'echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0.0\"}}}" | docker run --rm -i $(DOCKER_IMAGE):$(DOCKER_TAG)' || true
+	@echo "Test completed (container automatically stopped)"
+
+# Test Docker container and show full interaction
+docker-test-verbose:
+	@echo "Testing Docker container with verbose output..."
+	@echo "Sending initialization message and waiting for response..."
+	@timeout 10s bash -c 'echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0.0\"}}}" | docker run --rm -i $(DOCKER_IMAGE):$(DOCKER_TAG); echo "Exit code: $$?"' || echo "Container stopped after timeout"
 
 # Format code
 fmt:
@@ -125,6 +146,8 @@ help:
 	@echo "  dev           - Run in development mode"
 	@echo "  docker-build  - Build Docker image"
 	@echo "  docker-run    - Run Docker container"
+	@echo "  docker-test   - Test Docker container with MCP initialization (auto-stops)"
+	@echo "  docker-test-verbose - Test Docker container with verbose output"
 	@echo "  fmt           - Format code"
 	@echo "  lint          - Lint code"
 	@echo "  vet           - Vet code"
