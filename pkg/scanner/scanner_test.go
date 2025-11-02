@@ -258,3 +258,103 @@ func TestScanDirectoryIntegration(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMarkdownFileIntegration(t *testing.T) {
+	// Create temporary file
+	tempDir, err := os.MkdirTemp("", "scanner_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	testFile := filepath.Join(tempDir, "test.md")
+	content := "# Test Document\n\nThis is test content with **bold** text."
+
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	scanner := NewDocumentationScanner(tempDir)
+	metadata, err := scanner.ParseMarkdownFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to parse markdown file: %v", err)
+	}
+
+	if metadata.Title != "Test Document" {
+		t.Errorf("Expected title 'Test Document', got '%s'", metadata.Title)
+	}
+	if metadata.Size != int64(len(content)) {
+		t.Errorf("Expected size %d, got %d", len(content), metadata.Size)
+	}
+	if metadata.Checksum == "" {
+		t.Error("Expected checksum to be calculated")
+	}
+	if metadata.Path == "" {
+		t.Error("Expected path to be set")
+	}
+}
+
+func TestBuildIndexErrors(t *testing.T) {
+	scanner := NewDocumentationScanner("/test")
+
+	// Test with empty directories list
+	_, err := scanner.BuildIndex([]string{})
+	if err == nil {
+		t.Error("Expected error for empty directories list, got nil")
+	}
+
+	// Test with non-existent directories
+	indexes, err := scanner.BuildIndex([]string{"/non/existent/path"})
+	if err != nil {
+		t.Errorf("BuildIndex should not fail completely, got error: %v", err)
+	}
+	if len(indexes) != 0 {
+		t.Errorf("Expected empty indexes for non-existent directories, got %d", len(indexes))
+	}
+}
+
+func TestScanDirectoryWithMalformedFiles(t *testing.T) {
+	// Create temporary directory with malformed files
+	tempDir, err := os.MkdirTemp("", "scanner_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a binary file with .md extension (should be rejected)
+	binaryFile := filepath.Join(tempDir, "binary.md")
+	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0xFF}
+	err = os.WriteFile(binaryFile, binaryContent, 0644)
+	if err != nil {
+		t.Fatalf("Failed to create binary file: %v", err)
+	}
+
+	// Create an empty file
+	emptyFile := filepath.Join(tempDir, "empty.md")
+	err = os.WriteFile(emptyFile, []byte{}, 0644)
+	if err != nil {
+		t.Fatalf("Failed to create empty file: %v", err)
+	}
+
+	// Create a valid file
+	validFile := filepath.Join(tempDir, "valid.md")
+	err = os.WriteFile(validFile, []byte("# Valid Document\n\nContent here."), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create valid file: %v", err)
+	}
+
+	scanner := NewDocumentationScanner(tempDir)
+	index, err := scanner.ScanDirectory(tempDir)
+	if err != nil {
+		t.Fatalf("ScanDirectory failed: %v", err)
+	}
+
+	// Should have 1 valid document and some errors
+	if index.Count != 1 {
+		t.Errorf("Expected 1 valid document, got %d", index.Count)
+	}
+	if len(index.Errors) == 0 {
+		t.Error("Expected some parsing errors for malformed files")
+	}
+}

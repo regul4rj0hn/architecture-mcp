@@ -73,7 +73,7 @@
   - Test path sanitization functions
   - _Requirements: 2.3, 3.5, 7.3_
 
-- [ ] 5. Create documentation scanner and file system monitoring
+- [x] 5. Create documentation scanner and file system monitoring
 - [x] 5.1 Implement DocumentationScanner struct
   - Write recursive directory scanning for docs/guidelines, docs/patterns, docs/adr using filepath.Walk
   - Implement Markdown file parsing with metadata extraction using goldmark
@@ -81,14 +81,14 @@
   - Add error handling for malformed documents
   - _Requirements: 6.1, 6.2, 6.4_
 
-- [ ] 5.2 Implement FileSystemMonitor struct
+- [x] 5.2 Implement FileSystemMonitor struct
   - Set up file system watchers using fsnotify for docs directory
   - Implement debounced change detection using time.Timer to avoid excessive updates
   - Create cache invalidation triggers on file changes
   - Add error handling for file system access issues
   - _Requirements: 5.2, 5.3, 5.4_
 
-- [ ]* 5.3 Write unit tests for scanner and monitor
+- [x] 5.3 Write unit tests for scanner and monitor
   - Create unit tests for directory scanning functionality using Go testing package
   - Write tests for file system monitoring with mock file changes
   - Test error handling scenarios
