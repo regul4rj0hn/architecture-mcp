@@ -38,6 +38,8 @@ type Document struct {
 type DocumentIndex struct {
 	Category  string             `json:"category"`
 	Documents []DocumentMetadata `json:"documents"`
+	Count     int                `json:"count"`
+	Errors    []string           `json:"errors,omitempty"`
 }
 
 // ADRDocument represents an Architecture Decision Record with specific fields
