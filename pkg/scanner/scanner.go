@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/errors"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -36,12 +37,15 @@ func NewDocumentationScanner(rootPath string) *DocumentationScanner {
 func (ds *DocumentationScanner) ScanDirectory(path string) (*models.DocumentIndex, error) {
 	// Validate input path
 	if path == "" {
-		return nil, fmt.Errorf("scan path cannot be empty")
+		return nil, errors.NewValidationError(errors.ErrCodeInvalidParams,
+			"Scan path cannot be empty", nil)
 	}
 
 	// Check if directory exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil, fmt.Errorf("directory does not exist: %s", path)
+		return nil, errors.NewFileSystemError(errors.ErrCodeDirectoryNotFound,
+			"Directory does not exist", err).
+			WithContext("path", path)
 	}
 
 	var documents []models.DocumentMetadata
@@ -73,7 +77,9 @@ func (ds *DocumentationScanner) ScanDirectory(path string) (*models.DocumentInde
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan directory %s: %w", path, err)
+		return nil, errors.NewFileSystemError(errors.ErrCodeFileSystemUnavailable,
+			"Failed to scan directory", err).
+			WithContext("path", path)
 	}
 
 	// Log parse errors if any occurred
@@ -96,35 +102,46 @@ func (ds *DocumentationScanner) ScanDirectory(path string) (*models.DocumentInde
 func (ds *DocumentationScanner) ParseMarkdownFile(filePath string) (*models.DocumentMetadata, error) {
 	// Validate file path
 	if filePath == "" {
-		return nil, fmt.Errorf("file path cannot be empty")
+		return nil, errors.NewValidationError(errors.ErrCodeInvalidParams,
+			"File path cannot be empty", nil)
 	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %w", filePath, err)
+		if os.IsNotExist(err) {
+			return nil, errors.NewFileSystemError(errors.ErrCodeFileNotFound,
+				"File not found", err).WithContext("path", filePath)
+		}
+		return nil, errors.NewFileSystemError(errors.ErrCodePermissionDenied,
+			"Failed to open file", err).WithContext("path", filePath)
 	}
 	defer file.Close()
 
 	// Get file info
 	info, err := file.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get file info for %s: %w", filePath, err)
+		return nil, errors.NewFileSystemError(errors.ErrCodeFileSystemUnavailable,
+			"Failed to get file info", err).WithContext("path", filePath)
 	}
 
 	// Read file content
 	content, err := io.ReadAll(file)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
+		return nil, errors.NewFileSystemError(errors.ErrCodeFileSystemUnavailable,
+			"Failed to read file", err).WithContext("path", filePath)
 	}
 
 	// Validate that content is not empty
 	if len(content) == 0 {
-		return nil, fmt.Errorf("file %s is empty", filePath)
+		return nil, errors.NewParsingError(errors.ErrCodeMalformedMarkdown,
+			"File is empty", nil).WithContext("path", filePath)
 	}
 
 	// Validate that content appears to be valid text
 	if !ds.isValidMarkdown(content) {
-		return nil, fmt.Errorf("file %s does not appear to contain valid markdown", filePath)
+		return nil, errors.NewParsingError(errors.ErrCodeEncodingIssue,
+			"File does not appear to contain valid markdown", nil).
+			WithContext("path", filePath)
 	}
 
 	// Calculate checksum
@@ -133,7 +150,8 @@ func (ds *DocumentationScanner) ParseMarkdownFile(filePath string) (*models.Docu
 	// Parse markdown using goldmark to extract structured metadata
 	metadata, err := ds.ExtractMetadata(string(content))
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract metadata from %s: %w", filePath, err)
+		return nil, errors.NewParsingError(errors.ErrCodeInvalidMetadata,
+			"Failed to extract metadata", err).WithContext("path", filePath)
 	}
 
 	// Get relative path from root
@@ -183,7 +201,8 @@ func (ds *DocumentationScanner) ExtractMetadata(content string) (*models.Documen
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse markdown AST: %w", err)
+		return nil, errors.NewParsingError(errors.ErrCodeMalformedMarkdown,
+			"Failed to parse markdown AST", err)
 	}
 
 	return metadata, nil
@@ -251,7 +270,8 @@ func (ds *DocumentationScanner) isValidMarkdown(content []byte) bool {
 // BuildIndex scans multiple directories and builds a comprehensive index
 func (ds *DocumentationScanner) BuildIndex(directories []string) (map[string]*models.DocumentIndex, error) {
 	if len(directories) == 0 {
-		return nil, fmt.Errorf("no directories provided for indexing")
+		return nil, errors.NewValidationError(errors.ErrCodeInvalidParams,
+			"No directories provided for indexing", nil)
 	}
 
 	indexes := make(map[string]*models.DocumentIndex)

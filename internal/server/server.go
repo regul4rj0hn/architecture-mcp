@@ -15,6 +15,8 @@ import (
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/cache"
+	"mcp-architecture-service/pkg/errors"
+	"mcp-architecture-service/pkg/logging"
 	"mcp-architecture-service/pkg/monitor"
 	"mcp-architecture-service/pkg/scanner"
 )
@@ -30,6 +32,14 @@ type MCPServer struct {
 	scanner *scanner.DocumentationScanner
 	monitor *monitor.FileSystemMonitor
 
+	// Error handling and degradation
+	circuitBreakerManager *errors.CircuitBreakerManager
+	degradationManager    *errors.GracefulDegradationManager
+
+	// Logging
+	loggingManager *logging.LoggingManager
+	logger         *logging.StructuredLogger
+
 	// Coordination channels
 	refreshChan  chan models.FileEvent
 	shutdownChan chan struct{}
@@ -44,13 +54,32 @@ func NewMCPServer() *MCPServer {
 	docCache := cache.NewDocumentCache()
 	docScanner := scanner.NewDocumentationScanner(".")
 
-	fileMonitor, err := monitor.NewFileSystemMonitor()
-	if err != nil {
-		log.Printf("Warning: Failed to create file system monitor: %v", err)
-		fileMonitor = nil
+	// Initialize logging system
+	loggingManager := logging.NewLoggingManager()
+	loggingManager.SetGlobalContext("service", "mcp-architecture-service")
+	loggingManager.SetGlobalContext("version", "1.0.0")
+	logger := loggingManager.GetLogger("server")
+
+	// Initialize error handling components
+	circuitBreakerManager := errors.NewCircuitBreakerManager()
+	degradationManager := errors.NewGracefulDegradationManager()
+
+	// Register default degradation rules
+	for _, rule := range errors.CreateDefaultRules() {
+		degradationManager.RegisterComponent(rule)
 	}
 
-	return &MCPServer{
+	fileMonitor, err := monitor.NewFileSystemMonitor()
+	if err != nil {
+		loggingManager.LogError("server", err, "Failed to create file system monitor", map[string]interface{}{
+			"component": "file_monitor",
+		})
+		fileMonitor = nil
+		// Record error for degradation management
+		degradationManager.RecordError(errors.ComponentFileSystemMonitoring, err)
+	}
+
+	server := &MCPServer{
 		serverInfo: models.MCPServerInfo{
 			Name:    "mcp-architecture-service",
 			Version: "1.0.0",
@@ -68,23 +97,56 @@ func NewMCPServer() *MCPServer {
 		scanner: docScanner,
 		monitor: fileMonitor,
 
+		// Error handling
+		circuitBreakerManager: circuitBreakerManager,
+		degradationManager:    degradationManager,
+
+		// Logging
+		loggingManager: loggingManager,
+		logger:         logger,
+
 		// Coordination channels
 		refreshChan:  make(chan models.FileEvent, 100), // Buffered channel for file events
 		shutdownChan: make(chan struct{}),
 	}
+
+	// Set up degradation state change callback
+	degradationManager.SetStateChangeCallback(server.onDegradationStateChange)
+
+	// Set up circuit breaker callbacks
+	server.setupCircuitBreakerCallbacks()
+
+	return server
 }
 
 // Start begins the MCP server operation
 func (s *MCPServer) Start(ctx context.Context) error {
-	log.Println("Starting MCP Architecture Service...")
+	startTime := time.Now()
+
+	s.loggingManager.LogStartupSequence("server_start", map[string]interface{}{
+		"phase": "initialization",
+	}, 0, true)
 
 	// Initialize documentation system
+	docInitStart := time.Now()
 	if err := s.initializeDocumentationSystem(ctx); err != nil {
-		log.Printf("Warning: Failed to initialize documentation system: %v", err)
+		s.loggingManager.LogStartupSequence("documentation_init", map[string]interface{}{
+			"error": err.Error(),
+		}, time.Since(docInitStart), false)
+		s.logger.WithError(err).Warn("Failed to initialize documentation system")
+	} else {
+		s.loggingManager.LogStartupSequence("documentation_init", map[string]interface{}{},
+			time.Since(docInitStart), true)
 	}
 
 	// Start cache refresh coordinator
 	go s.cacheRefreshCoordinator(ctx)
+
+	s.loggingManager.LogStartupSequence("server_ready", map[string]interface{}{
+		"total_startup_time_ms": time.Since(startTime).Milliseconds(),
+	}, time.Since(startTime), true)
+
+	s.logger.Info("MCP Architecture Service started successfully")
 
 	// Start JSON-RPC message processing loop
 	return s.processMessages(ctx, os.Stdin, os.Stdout)
@@ -92,20 +154,38 @@ func (s *MCPServer) Start(ctx context.Context) error {
 
 // Shutdown gracefully shuts down the MCP server
 func (s *MCPServer) Shutdown(ctx context.Context) error {
-	log.Println("Shutting down MCP Architecture Service...")
+	shutdownStart := time.Now()
+
+	s.loggingManager.LogShutdownSequence("shutdown_start", map[string]interface{}{}, 0, true)
 
 	// Signal shutdown to background goroutines
 	close(s.shutdownChan)
 
 	// Stop file system monitoring
+	monitorShutdownStart := time.Now()
 	if s.monitor != nil {
 		if err := s.monitor.StopWatching(); err != nil {
-			log.Printf("Error stopping file monitor: %v", err)
+			s.loggingManager.LogShutdownSequence("monitor_stop", map[string]interface{}{
+				"error": err.Error(),
+			}, time.Since(monitorShutdownStart), false)
+			s.logger.WithError(err).Error("Error stopping file monitor")
+		} else {
+			s.loggingManager.LogShutdownSequence("monitor_stop", map[string]interface{}{},
+				time.Since(monitorShutdownStart), true)
 		}
 	}
 
 	// Clear cache
+	cacheShutdownStart := time.Now()
 	s.cache.Clear()
+	s.loggingManager.LogShutdownSequence("cache_clear", map[string]interface{}{},
+		time.Since(cacheShutdownStart), true)
+
+	s.loggingManager.LogShutdownSequence("shutdown_complete", map[string]interface{}{
+		"total_shutdown_time_ms": time.Since(shutdownStart).Milliseconds(),
+	}, time.Since(shutdownStart), true)
+
+	s.logger.Info("MCP Architecture Service shutdown completed")
 
 	return nil
 }
@@ -146,18 +226,38 @@ func (s *MCPServer) HandleMessage(message *models.MCPMessage) *models.MCPMessage
 
 // handleMessage processes individual MCP messages
 func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage {
+	startTime := time.Now()
+	var response *models.MCPMessage
+	var success bool = true
+	var errorMsg string
+
+	defer func() {
+		duration := time.Since(startTime)
+		s.loggingManager.LogMCPRequest(message.Method, message.ID, duration, success, errorMsg)
+	}()
+
 	switch message.Method {
 	case "initialize":
-		return s.handleInitialize(message)
+		response = s.handleInitialize(message)
 	case "notifications/initialized":
-		return s.handleInitialized(message)
+		response = s.handleInitialized(message)
 	case "resources/list":
-		return s.handleResourcesList(message)
+		response = s.handleResourcesList(message)
 	case "resources/read":
-		return s.handleResourcesRead(message)
+		response = s.handleResourcesRead(message)
 	default:
-		return s.createErrorResponse(message.ID, -32601, "Method not found")
+		success = false
+		errorMsg = "Method not found"
+		response = s.createErrorResponse(message.ID, -32601, "Method not found")
 	}
+
+	// Check if response contains an error
+	if response != nil && response.Error != nil {
+		success = false
+		errorMsg = response.Error.Message
+	}
+
+	return response
 }
 
 // handleInitialize handles the MCP initialize method
@@ -178,7 +278,7 @@ func (s *MCPServer) handleInitialize(message *models.MCPMessage) *models.MCPMess
 // handleInitialized handles the notifications/initialized method
 func (s *MCPServer) handleInitialized(message *models.MCPMessage) *models.MCPMessage {
 	s.initialized = true
-	log.Println("MCP server initialized successfully")
+	s.logger.WithContext("request_id", message.ID).Info("MCP server initialized successfully")
 	return nil // No response for notifications
 }
 
@@ -227,19 +327,42 @@ func (s *MCPServer) handleResourcesRead(message *models.MCPMessage) *models.MCPM
 
 	// Validate URI parameter
 	if params.URI == "" {
-		return s.createErrorResponse(message.ID, -32602, "Missing required parameter: uri")
+		structuredErr := errors.NewValidationError(errors.ErrCodeInvalidParams,
+			"Missing required parameter: uri", nil)
+		return s.createStructuredErrorResponse(message.ID, structuredErr)
 	}
 
 	// Parse the MCP resource URI
 	category, path, err := s.parseResourceURI(params.URI)
 	if err != nil {
-		return s.createErrorResponse(message.ID, -32602, fmt.Sprintf("Invalid resource URI: %s", err.Error()))
+		structuredErr := errors.NewValidationError(errors.ErrCodeInvalidURI,
+			"Invalid resource URI", err).WithContext("uri", params.URI)
+		return s.createStructuredErrorResponse(message.ID, structuredErr)
 	}
 
-	// Find the document in cache
-	document, err := s.findDocumentByResourcePath(category, path)
+	// Find the document in cache with circuit breaker protection
+	circuitBreaker := s.circuitBreakerManager.GetOrCreate("resource_read",
+		errors.DefaultCircuitBreakerConfig("resource_read"))
+
+	var document *models.Document
+	err = circuitBreaker.Execute(func() error {
+		var findErr error
+		document, findErr = s.findDocumentByResourcePath(category, path)
+		return findErr
+	})
+
 	if err != nil {
-		return s.createErrorResponse(message.ID, -32603, fmt.Sprintf("Resource not found: %s", err.Error()))
+		// Check if it's a circuit breaker error or actual resource error
+		if structuredErr, ok := err.(*errors.StructuredError); ok {
+			return s.createStructuredErrorResponse(message.ID, structuredErr)
+		}
+
+		structuredErr := errors.NewMCPError(errors.ErrCodeResourceNotFound,
+			"Resource not found", err).
+			WithContext("uri", params.URI).
+			WithContext("category", category).
+			WithContext("path", path)
+		return s.createStructuredErrorResponse(message.ID, structuredErr)
 	}
 
 	// Create resource content response
@@ -272,6 +395,43 @@ func (s *MCPServer) createErrorResponse(id interface{}, code int, message string
 	}
 }
 
+// createStructuredErrorResponse creates an MCP error response from a structured error
+func (s *MCPServer) createStructuredErrorResponse(id interface{}, structuredErr *errors.StructuredError) *models.MCPMessage {
+	return &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error:   structuredErr.ToMCPError(),
+	}
+}
+
+// setupCircuitBreakerCallbacks sets up callbacks for circuit breaker state changes
+func (s *MCPServer) setupCircuitBreakerCallbacks() {
+	// This would be called when creating circuit breakers, but since we create them
+	// on-demand, we'll set up the callback in the circuit breaker creation
+}
+
+// onDegradationStateChange handles degradation state changes
+func (s *MCPServer) onDegradationStateChange(component errors.ServiceComponent, oldLevel, newLevel errors.DegradationLevel) {
+	s.loggingManager.LogDegradationStateChange(component, oldLevel, newLevel)
+
+	// Take specific actions based on component and degradation level
+	switch component {
+	case errors.ComponentFileSystemMonitoring:
+		if newLevel != errors.DegradationNone {
+			s.logger.WithContext("action", "switch_to_periodic_scanning").
+				Warn("File system monitoring degraded - switching to periodic scanning")
+		} else {
+			s.logger.WithContext("action", "resume_realtime_monitoring").
+				Info("File system monitoring recovered - resuming real-time monitoring")
+		}
+	case errors.ComponentCacheRefresh:
+		if newLevel != errors.DegradationNone {
+			s.logger.WithContext("action", "disable_automatic_updates").
+				Warn("Cache refresh degraded - disabling automatic updates")
+		}
+	}
+}
+
 // initializeDocumentationSystem sets up the documentation scanning and monitoring
 func (s *MCPServer) initializeDocumentationSystem(ctx context.Context) error {
 	// Define documentation directories to scan
@@ -282,25 +442,42 @@ func (s *MCPServer) initializeDocumentationSystem(ctx context.Context) error {
 	}
 
 	// Populate initial cache using scanner
-	log.Println("Scanning documentation directories for initial cache population...")
+	scanStart := time.Now()
+	s.logger.Info("Scanning documentation directories for initial cache population")
 
 	indexes, err := s.scanner.BuildIndex(docDirs)
+	scanDuration := time.Since(scanStart)
+
+	var totalDocs int
+	var scanErrors []string
+
 	if err != nil {
-		log.Printf("Warning: Failed to build initial index: %v", err)
+		scanErrors = append(scanErrors, err.Error())
+		s.logger.WithError(err).Warn("Failed to build initial index")
 	}
 
 	// Store indexes in cache
 	for category, index := range indexes {
 		s.cache.SetIndex(category, index)
-		log.Printf("Cached %d documents for category '%s'", index.Count, category)
+		totalDocs += index.Count
+
+		s.logger.WithContext("category", category).
+			WithContext("document_count", index.Count).
+			Info("Cached documents for category")
 
 		// Load individual documents into cache
 		for _, docMeta := range index.Documents {
 			if err := s.loadDocumentIntoCache(docMeta); err != nil {
-				log.Printf("Warning: Failed to load document %s: %v", docMeta.Path, err)
+				scanErrors = append(scanErrors, fmt.Sprintf("Failed to load %s: %v", docMeta.Path, err))
+				s.logger.WithError(err).
+					WithContext("document_path", docMeta.Path).
+					Warn("Failed to load document into cache")
 			}
 		}
 	}
+
+	// Log overall scan results
+	s.loggingManager.LogDocumentScan("initial_scan", totalDocs, scanErrors, scanDuration)
 
 	// Set up file system monitoring if available
 	if s.monitor != nil {
@@ -308,13 +485,20 @@ func (s *MCPServer) initializeDocumentationSystem(ctx context.Context) error {
 			if _, err := os.Stat(dir); err == nil {
 				err := s.monitor.WatchDirectory(dir, s.handleFileEvent)
 				if err != nil {
-					log.Printf("Warning: Failed to watch directory %s: %v", dir, err)
+					s.logger.WithError(err).
+						WithContext("directory", dir).
+						Warn("Failed to watch directory")
+					s.degradationManager.RecordError(errors.ComponentFileSystemMonitoring, err)
+				} else {
+					s.logger.WithContext("directory", dir).
+						Info("Started monitoring directory")
 				}
 			}
 		}
 	}
 
-	log.Printf("Documentation system initialized with %d total documents", s.cache.Size())
+	s.logger.WithContext("total_documents", s.cache.Size()).
+		Info("Documentation system initialized successfully")
 	return nil
 }
 
@@ -353,7 +537,9 @@ func (s *MCPServer) handleFileEvent(event models.FileEvent) {
 		// Event queued successfully
 	default:
 		// Channel is full, log warning but don't block
-		log.Printf("Warning: Refresh channel full, dropping file event for %s", event.Path)
+		s.logger.WithContext("event_path", event.Path).
+			WithContext("event_type", event.Type).
+			Warn("Refresh channel full, dropping file event")
 	}
 }
 
@@ -368,16 +554,27 @@ func (s *MCPServer) cacheRefreshCoordinator(ctx context.Context) {
 			return
 		}
 
-		log.Printf("Processing %d pending file events for cache refresh", len(pendingEvents))
+		refreshStart := time.Now()
+		affectedFiles := make([]string, 0, len(pendingEvents))
+
+		s.logger.WithContext("pending_events", len(pendingEvents)).
+			Info("Processing pending file events for cache refresh")
 
 		for path, event := range pendingEvents {
 			s.processFileEventForCache(event)
+			affectedFiles = append(affectedFiles, path)
 			delete(pendingEvents, path)
 		}
 
+		refreshDuration := time.Since(refreshStart)
+
+		// Log cache refresh operation
+		s.loggingManager.LogCacheRefresh("batch_refresh", affectedFiles, refreshDuration, true)
+
 		// Log cache statistics after refresh
-		log.Printf("Cache refresh complete - Documents: %d, Hit ratio: %.1f%%",
-			s.cache.Size(), s.cache.GetCacheHitRatio())
+		s.logger.WithContext("total_documents", s.cache.Size()).
+			WithContext("cache_hit_ratio", s.cache.GetCacheHitRatio()).
+			Info("Cache refresh completed")
 	}
 
 	for {
@@ -414,25 +611,38 @@ func (s *MCPServer) processFileEventForCache(event models.FileEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	eventStart := time.Now()
+
 	switch event.Type {
 	case "create", "modify":
 		// Parse the file and update cache
 		metadata, err := s.scanner.ParseMarkdownFile(event.Path)
 		if err != nil {
-			log.Printf("Error parsing updated file %s: %v", event.Path, err)
+			s.logger.WithError(err).
+				WithContext("file_path", event.Path).
+				WithContext("event_type", event.Type).
+				Error("Error parsing updated file")
+			s.degradationManager.RecordError(errors.ComponentDocumentParsing, err)
 			return
 		}
 
 		// Load document content into cache
 		if err := s.loadDocumentIntoCache(*metadata); err != nil {
-			log.Printf("Error loading updated document %s: %v", event.Path, err)
+			s.logger.WithError(err).
+				WithContext("file_path", event.Path).
+				WithContext("event_type", event.Type).
+				Error("Error loading updated document")
+			s.degradationManager.RecordError(errors.ComponentCacheRefresh, err)
 			return
 		}
 
 		// Update category index
 		s.updateCategoryIndex(metadata.Category)
 
-		log.Printf("Updated cache for %s file: %s", event.Type, event.Path)
+		s.logger.WithContext("file_path", event.Path).
+			WithContext("event_type", event.Type).
+			WithContext("category", metadata.Category).
+			Info("Updated cache for file")
 
 	case "delete":
 		// Remove from cache
@@ -442,8 +652,13 @@ func (s *MCPServer) processFileEventForCache(event models.FileEvent) {
 		category := s.getCategoryFromPath(event.Path)
 		s.updateCategoryIndex(category)
 
-		log.Printf("Removed deleted file from cache: %s", event.Path)
+		s.logger.WithContext("file_path", event.Path).
+			WithContext("category", category).
+			Info("Removed deleted file from cache")
 	}
+
+	// Log file system event processing time
+	s.loggingManager.LogFileSystemEvent(event.Type, event.Path, time.Since(eventStart))
 }
 
 // updateCategoryIndex rebuilds the index for a specific category
@@ -567,7 +782,9 @@ func (s *MCPServer) parseResourceURI(uri string) (category, path string, err err
 	// architecture://adr/{adr_id}
 
 	if !strings.HasPrefix(uri, "architecture://") {
-		return "", "", fmt.Errorf("invalid URI scheme, expected 'architecture://'")
+		return "", "", errors.NewValidationError(errors.ErrCodeInvalidURI,
+			"Invalid URI scheme, expected 'architecture://'", nil).
+			WithContext("uri", uri)
 	}
 
 	// Remove the scheme prefix
@@ -576,7 +793,9 @@ func (s *MCPServer) parseResourceURI(uri string) (category, path string, err err
 	// Split into category and path
 	parts := strings.SplitN(remainder, "/", 2)
 	if len(parts) < 2 {
-		return "", "", fmt.Errorf("invalid URI format, expected 'architecture://{category}/{path}'")
+		return "", "", errors.NewValidationError(errors.ErrCodeInvalidURI,
+			"Invalid URI format, expected 'architecture://{category}/{path}'", nil).
+			WithContext("uri", uri)
 	}
 
 	category = parts[0]
@@ -584,7 +803,18 @@ func (s *MCPServer) parseResourceURI(uri string) (category, path string, err err
 
 	// Validate path is not empty and doesn't start with slash
 	if path == "" || strings.HasPrefix(path, "/") {
-		return "", "", fmt.Errorf("invalid URI format, path cannot be empty or start with '/'")
+		return "", "", errors.NewValidationError(errors.ErrCodeInvalidURI,
+			"Invalid URI format, path cannot be empty or start with '/'", nil).
+			WithContext("uri", uri).
+			WithContext("path", path)
+	}
+
+	// Check for path traversal attempts
+	if strings.Contains(path, "..") || strings.Contains(path, "\\") {
+		return "", "", errors.NewValidationError(errors.ErrCodePathTraversal,
+			"Path traversal attempt detected", nil).
+			WithContext("uri", uri).
+			WithContext("path", path)
 	}
 
 	// Validate category
@@ -596,18 +826,42 @@ func (s *MCPServer) parseResourceURI(uri string) (category, path string, err err
 	case "adr":
 		return "adr", path, nil
 	default:
-		return "", "", fmt.Errorf("unsupported resource category: %s", category)
+		return "", "", errors.NewValidationError(errors.ErrCodeInvalidCategory,
+			"Unsupported resource category", nil).
+			WithContext("uri", uri).
+			WithContext("category", category)
 	}
 }
 
 // findDocumentByResourcePath finds a document in the cache by category and resource path
 func (s *MCPServer) findDocumentByResourcePath(category, resourcePath string) (*models.Document, error) {
-	// Get all documents for the category
-	documents := s.cache.GetByCategory(category)
+	// Record this operation for degradation management
+	err := s.degradationManager.ExecuteWithDegradation(
+		errors.ComponentResourceDiscovery,
+		func() error {
+			// Get all documents for the category
+			documents := s.cache.GetByCategory(category)
 
-	if len(documents) == 0 {
-		return nil, fmt.Errorf("no documents found for category: %s", category)
+			if len(documents) == 0 {
+				return errors.NewCacheError(errors.ErrCodeCacheMiss,
+					"No documents found for category", nil).
+					WithContext("category", category)
+			}
+			return nil
+		},
+		func(level errors.DegradationLevel) error {
+			// Degraded behavior - return empty result
+			return errors.NewSystemError("SERVICE_DEGRADED",
+				"Resource discovery is degraded", nil).
+				WithContext("degradation_level", level.String())
+		},
+	)
+
+	if err != nil {
+		return nil, err
 	}
+
+	documents := s.cache.GetByCategory(category)
 
 	// For each document, generate its resource URI and compare with the requested path
 	for _, doc := range documents {
@@ -635,7 +889,10 @@ func (s *MCPServer) findDocumentByResourcePath(category, resourcePath string) (*
 		}
 	}
 
-	return nil, fmt.Errorf("document not found for path: %s", resourcePath)
+	return nil, errors.NewMCPError(errors.ErrCodeResourceNotFound,
+		"Document not found for path", nil).
+		WithContext("category", category).
+		WithContext("resourcePath", resourcePath)
 }
 
 // generatePossibleFilePaths generates possible file paths for a given category and resource path

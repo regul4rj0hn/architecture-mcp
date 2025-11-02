@@ -1,12 +1,12 @@
 package monitor
 
 import (
-	"fmt"
 	"log"
 	"path/filepath"
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/errors"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -22,7 +22,8 @@ type FileSystemMonitor struct {
 func NewFileSystemMonitor() (*FileSystemMonitor, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create file watcher: %w", err)
+		return nil, errors.NewSystemError(errors.ErrCodeInitializationFailed,
+			"Failed to create file watcher", err)
 	}
 
 	return &FileSystemMonitor{
@@ -40,7 +41,8 @@ func (fsm *FileSystemMonitor) WatchDirectory(path string, callback func(models.F
 	// Add directory to watcher
 	err := fsm.watcher.Add(path)
 	if err != nil {
-		return fmt.Errorf("failed to watch directory %s: %w", path, err)
+		return errors.NewFileSystemError(errors.ErrCodeFileSystemUnavailable,
+			"Failed to watch directory", err).WithContext("path", path)
 	}
 
 	// Start monitoring in a goroutine

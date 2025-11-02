@@ -1,12 +1,12 @@
 package cache
 
 import (
-	"fmt"
 	"runtime"
 	"sync"
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/errors"
 )
 
 // DocumentCache provides in-memory caching for documentation
@@ -45,7 +45,9 @@ func (dc *DocumentCache) Get(key string) (*models.Document, error) {
 	document, exists := dc.documents[key]
 	if !exists {
 		dc.stats.Misses++
-		return nil, fmt.Errorf("document not found: %s", key)
+		return nil, errors.NewCacheError(errors.ErrCodeCacheMiss,
+			"Document not found in cache", nil).
+			WithContext("key", key)
 	}
 
 	dc.stats.Hits++
