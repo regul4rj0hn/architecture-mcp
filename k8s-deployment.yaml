@@ -1,0 +1,187 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-architecture-service
+  labels:
+    app: mcp-architecture-service
+    version: v1
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: mcp-architecture-service
+  template:
+    metadata:
+      labels:
+        app: mcp-architecture-service
+        version: v1
+    spec:
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      
+      containers:
+      - name: mcp-server
+        image: mcp-architecture-service:latest
+        imagePullPolicy: Always
+        
+        # Security context for the container
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        
+        # Resource limits and requests
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        
+        # Environment variables
+        env:
+        - name: DOCS_PATH
+          value: "/app/docs"
+        - name: TMPDIR
+          value: "/app/tmp"
+        
+        # Volume mounts for writable directories
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /app/tmp
+        - name: logs-volume
+          mountPath: /app/logs
+        
+        # Liveness probe using the health check script
+        livenessProbe:
+          exec:
+            command:
+            - /app/healthcheck.sh
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        
+        # Readiness probe using the health check script
+        readinessProbe:
+          exec:
+            command:
+            - /app/healthcheck.sh
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        
+        # Startup probe for initial container startup
+        startupProbe:
+          exec:
+            command:
+            - /app/healthcheck.sh
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 10
+          successThreshold: 1
+      
+      # Volumes for writable directories (since root filesystem is read-only)
+      volumes:
+      - name: tmp-volume
+        emptyDir:
+          sizeLimit: 100Mi
+      - name: logs-volume
+        emptyDir:
+          sizeLimit: 100Mi
+      
+      # Additional security configurations
+      automountServiceAccountToken: false
+      
+      # Node selection and affinity (optional)
+      nodeSelector:
+        kubernetes.io/os: linux
+      
+      # Tolerations for scheduling (optional)
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-architecture-service
+  labels:
+    app: mcp-architecture-service
+spec:
+  # Note: MCP server uses stdio communication, not network ports
+  # This service is mainly for internal cluster communication if needed
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: mcp-architecture-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mcp-architecture-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: mcp-architecture-service
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-architecture-service-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: mcp-architecture-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53  # DNS
+    - protocol: UDP
+      port: 53  # DNS

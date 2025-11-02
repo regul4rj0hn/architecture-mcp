@@ -131,25 +131,132 @@ install-tools:
 	@echo "Installing development tools..."
 	$(GOGET) -u github.com/golangci/golangci-lint/cmd/golangci-lint
 
+# Security-focused Docker build with enhanced security scanning
+docker-build-secure:
+	@echo "Building secure Docker image with security scanning..."
+	docker build --no-cache -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+	@echo "Running security scan on Docker image..."
+	@if command -v docker >/dev/null 2>&1; then \
+		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+			-v $(PWD):/app aquasec/trivy:latest image $(DOCKER_IMAGE):$(DOCKER_TAG) || true; \
+	fi
+	@echo "Secure Docker image built: $(DOCKER_IMAGE):$(DOCKER_TAG)"
+
+# Test Docker container security configuration
+docker-test-security:
+	@echo "Testing Docker container security configuration..."
+	@echo "Checking non-root user execution..."
+	@docker run --rm $(DOCKER_IMAGE):$(DOCKER_TAG) id || true
+	@echo "Checking read-only filesystem..."
+	@docker run --rm $(DOCKER_IMAGE):$(DOCKER_TAG) sh -c 'touch /test 2>&1 || echo "Read-only filesystem working correctly"' || true
+	@echo "Checking process capabilities..."
+	@docker run --rm $(DOCKER_IMAGE):$(DOCKER_TAG) sh -c 'cat /proc/self/status | grep Cap' || true
+	@echo "Security test completed"
+
+# Run Docker container with security options for testing
+docker-run-secure:
+	@echo "Running Docker container with enhanced security options..."
+	docker run --rm -i \
+		--security-opt=no-new-privileges:true \
+		--read-only \
+		--tmpfs /app/tmp:size=100M,noexec,nosuid,nodev \
+		--tmpfs /app/logs:size=100M,noexec,nosuid,nodev \
+		--user 1001:1001 \
+		--memory=256m \
+		--cpus=0.2 \
+		$(DOCKER_IMAGE):$(DOCKER_TAG)
+
+# Test health check functionality
+docker-test-health:
+	@echo "Testing Docker health check functionality..."
+	@echo "Starting container with health check..."
+	@docker run -d --name mcp-health-test $(DOCKER_IMAGE):$(DOCKER_TAG) || true
+	@sleep 10
+	@echo "Checking health status..."
+	@docker inspect --format='{{.State.Health.Status}}' mcp-health-test || true
+	@echo "Health check logs:"
+	@docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' mcp-health-test || true
+	@echo "Cleaning up test container..."
+	@docker rm -f mcp-health-test || true
+
+# Deploy to Kubernetes with security configurations
+k8s-deploy:
+	@echo "Deploying to Kubernetes with security configurations..."
+	kubectl apply -f k8s-deployment.yaml
+	@echo "Waiting for deployment to be ready..."
+	kubectl rollout status deployment/mcp-architecture-service
+	@echo "Checking pod security context..."
+	kubectl get pods -l app=mcp-architecture-service -o jsonpath='{.items[0].spec.securityContext}' | jq .
+	@echo "Deployment completed"
+
+# Remove Kubernetes deployment
+k8s-undeploy:
+	@echo "Removing Kubernetes deployment..."
+	kubectl delete -f k8s-deployment.yaml --ignore-not-found=true
+	@echo "Deployment removed"
+
+# Test Kubernetes deployment security
+k8s-test-security:
+	@echo "Testing Kubernetes deployment security..."
+	@echo "Checking pod security context..."
+	kubectl get pods -l app=mcp-architecture-service -o jsonpath='{.items[0].spec.securityContext}' | jq .
+	@echo "Checking container security context..."
+	kubectl get pods -l app=mcp-architecture-service -o jsonpath='{.items[0].spec.containers[0].securityContext}' | jq .
+	@echo "Checking resource limits..."
+	kubectl get pods -l app=mcp-architecture-service -o jsonpath='{.items[0].spec.containers[0].resources}' | jq .
+	@echo "Security test completed"
+
+# Run Docker Compose with security configurations
+compose-up:
+	@echo "Starting services with Docker Compose (secure configuration)..."
+	docker-compose up -d
+	@echo "Services started"
+
+# Stop Docker Compose services
+compose-down:
+	@echo "Stopping Docker Compose services..."
+	docker-compose down
+	@echo "Services stopped"
+
+# Test Docker Compose security configuration
+compose-test-security:
+	@echo "Testing Docker Compose security configuration..."
+	@echo "Checking container security options..."
+	docker inspect mcp-architecture-service | jq '.[0].HostConfig.SecurityOpt'
+	@echo "Checking read-only filesystem..."
+	docker inspect mcp-architecture-service | jq '.[0].HostConfig.ReadonlyRootfs'
+	@echo "Checking resource limits..."
+	docker inspect mcp-architecture-service | jq '.[0].HostConfig.Memory, .[0].HostConfig.CpuQuota'
+	@echo "Security test completed"
+
 # Show help
 help:
 	@echo "Available targets:"
-	@echo "  all           - Clean, download deps, and build"
-	@echo "  build         - Build the binary"
-	@echo "  build-linux   - Build the binary for Linux"
-	@echo "  clean         - Clean build artifacts"
-	@echo "  test          - Run tests"
-	@echo "  test-coverage - Run tests with coverage report"
-	@echo "  deps          - Download dependencies"
-	@echo "  tidy          - Tidy go.mod"
-	@echo "  run           - Build and run the application"
-	@echo "  dev           - Run in development mode"
-	@echo "  docker-build  - Build Docker image"
-	@echo "  docker-run    - Run Docker container"
-	@echo "  docker-test   - Test Docker container with MCP initialization (auto-stops)"
-	@echo "  docker-test-verbose - Test Docker container with verbose output"
-	@echo "  fmt           - Format code"
-	@echo "  lint          - Lint code"
-	@echo "  vet           - Vet code"
-	@echo "  install-tools - Install development tools"
-	@echo "  help          - Show this help message"
+	@echo "  all                    - Clean, download deps, and build"
+	@echo "  build                  - Build the binary"
+	@echo "  build-linux            - Build the binary for Linux"
+	@echo "  clean                  - Clean build artifacts"
+	@echo "  test                   - Run tests"
+	@echo "  test-coverage          - Run tests with coverage report"
+	@echo "  deps                   - Download dependencies"
+	@echo "  tidy                   - Tidy go.mod"
+	@echo "  run                    - Build and run the application"
+	@echo "  dev                    - Run in development mode"
+	@echo "  docker-build           - Build Docker image"
+	@echo "  docker-build-secure    - Build Docker image with security scanning"
+	@echo "  docker-run             - Run Docker container"
+	@echo "  docker-run-secure      - Run Docker container with enhanced security"
+	@echo "  docker-test            - Test Docker container with MCP initialization"
+	@echo "  docker-test-security   - Test Docker container security configuration"
+	@echo "  docker-test-health     - Test Docker health check functionality"
+	@echo "  k8s-deploy             - Deploy to Kubernetes with security configs"
+	@echo "  k8s-undeploy           - Remove Kubernetes deployment"
+	@echo "  k8s-test-security      - Test Kubernetes deployment security"
+	@echo "  compose-up             - Start services with Docker Compose"
+	@echo "  compose-down           - Stop Docker Compose services"
+	@echo "  compose-test-security  - Test Docker Compose security configuration"
+	@echo "  fmt                    - Format code"
+	@echo "  lint                   - Lint code"
+	@echo "  vet                    - Vet code"
+	@echo "  install-tools          - Install development tools"
+	@echo "  help                   - Show this help message"

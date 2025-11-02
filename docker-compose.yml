@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  mcp-architecture-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-architecture-service:latest
+    container_name: mcp-architecture-service
+    
+    # Security configurations
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    user: "1001:1001"
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.2'
+        reservations:
+          memory: 64M
+          cpus: '0.05'
+    
+    # Environment variables
+    environment:
+      - DOCS_PATH=/app/docs
+      - TMPDIR=/app/tmp
+    
+    # Volume mounts for writable directories
+    tmpfs:
+      - /app/tmp:size=100M,noexec,nosuid,nodev
+      - /app/logs:size=100M,noexec,nosuid,nodev
+    
+    # Health check configuration
+    healthcheck:
+      test: ["/app/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration (MCP uses stdio, no ports needed)
+    network_mode: "none"
