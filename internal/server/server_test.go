@@ -112,6 +112,38 @@ func TestHandleInitialized(t *testing.T) {
 func TestHandleResourcesList(t *testing.T) {
 	server := NewMCPServer()
 
+	// Add some test documents to the cache
+	testDoc1 := &models.Document{
+		Metadata: models.DocumentMetadata{
+			Title:        "API Design Guidelines",
+			Category:     "guideline",
+			Path:         "docs/guidelines/api-design.md",
+			LastModified: time.Now(),
+			Size:         1024,
+			Checksum:     "abc123",
+		},
+		Content: models.DocumentContent{
+			RawContent: "# API Design Guidelines\nThis is a test document.",
+		},
+	}
+
+	testDoc2 := &models.Document{
+		Metadata: models.DocumentMetadata{
+			Title:        "Repository Pattern",
+			Category:     "pattern",
+			Path:         "docs/patterns/repository.md",
+			LastModified: time.Now(),
+			Size:         512,
+			Checksum:     "def456",
+		},
+		Content: models.DocumentContent{
+			RawContent: "# Repository Pattern\nThis is a test pattern.",
+		},
+	}
+
+	server.cache.Set(testDoc1.Metadata.Path, testDoc1)
+	server.cache.Set(testDoc2.Metadata.Path, testDoc2)
+
 	listMessage := &models.MCPMessage{
 		JSONRPC: "2.0",
 		ID:      "test-list",
@@ -142,9 +174,47 @@ func TestHandleResourcesList(t *testing.T) {
 		t.Fatal("Expected result to be MCPResourcesListResult")
 	}
 
-	// Should return empty list for now
-	if len(result.Resources) != 0 {
-		t.Errorf("Expected empty resources list, got %d resources", len(result.Resources))
+	// Should return the test documents
+	if len(result.Resources) != 2 {
+		t.Errorf("Expected 2 resources, got %d resources", len(result.Resources))
+	}
+
+	// Verify resource properties
+	for _, resource := range result.Resources {
+		if resource.URI == "" {
+			t.Error("Resource URI should not be empty")
+		}
+		if resource.Name == "" {
+			t.Error("Resource name should not be empty")
+		}
+		if resource.MimeType != "text/markdown" {
+			t.Errorf("Expected mimeType 'text/markdown', got '%s'", resource.MimeType)
+		}
+		if resource.Annotations == nil {
+			t.Error("Resource annotations should not be nil")
+		}
+		if resource.Annotations["category"] == "" {
+			t.Error("Resource should have category annotation")
+		}
+	}
+
+	// Verify specific URIs are generated correctly
+	foundGuideline := false
+	foundPattern := false
+	for _, resource := range result.Resources {
+		if strings.Contains(resource.URI, "architecture://guidelines/") {
+			foundGuideline = true
+		}
+		if strings.Contains(resource.URI, "architecture://patterns/") {
+			foundPattern = true
+		}
+	}
+
+	if !foundGuideline {
+		t.Error("Expected to find guideline resource with correct URI")
+	}
+	if !foundPattern {
+		t.Error("Expected to find pattern resource with correct URI")
 	}
 }
 

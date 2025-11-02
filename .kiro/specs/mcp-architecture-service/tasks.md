@@ -115,7 +115,7 @@
   - _Requirements: 5.1, 5.3_
 
 - [ ] 7. Enhance MCP server with full resource functionality
-- [ ] 7.1 Implement MCP resources/list method
+- [x] 7.1 Implement MCP resources/list method
   - Create `resources/list` handler returning all available documentation resources
   - Generate MCP resource URIs for guidelines, patterns, and ADRs
   - Include resource metadata (name, description, mimeType)

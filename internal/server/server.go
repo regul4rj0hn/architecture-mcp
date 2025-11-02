@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -137,6 +139,11 @@ func (s *MCPServer) processMessages(ctx context.Context, reader io.Reader, write
 	}
 }
 
+// HandleMessage processes individual MCP messages (exported for testing)
+func (s *MCPServer) HandleMessage(message *models.MCPMessage) *models.MCPMessage {
+	return s.handleMessage(message)
+}
+
 // handleMessage processes individual MCP messages
 func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage {
 	switch message.Method {
@@ -177,9 +184,21 @@ func (s *MCPServer) handleInitialized(message *models.MCPMessage) *models.MCPMes
 
 // handleResourcesList handles the resources/list method
 func (s *MCPServer) handleResourcesList(message *models.MCPMessage) *models.MCPMessage {
-	// Return empty list for now - will be implemented in later tasks
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var resources []models.MCPResource
+
+	// Get all cached documents and convert them to MCP resources
+	allDocuments := s.cache.GetAllDocuments()
+
+	for _, doc := range allDocuments {
+		resource := s.createMCPResourceFromDocument(doc)
+		resources = append(resources, resource)
+	}
+
 	result := models.MCPResourcesListResult{
-		Resources: []models.MCPResource{},
+		Resources: resources,
 	}
 
 	return &models.MCPMessage{
@@ -416,4 +435,80 @@ func (s *MCPServer) getCategoryFromPath(path string) string {
 		return "adr"
 	}
 	return "unknown"
+}
+
+// createMCPResourceFromDocument converts a Document to an MCPResource
+func (s *MCPServer) createMCPResourceFromDocument(doc *models.Document) models.MCPResource {
+	// Generate MCP resource URI based on category
+	uri := s.generateResourceURI(doc.Metadata.Category, doc.Metadata.Path)
+
+	// Create description from title and category
+	description := fmt.Sprintf("%s document", strings.Title(doc.Metadata.Category))
+	if doc.Metadata.Title != "" {
+		description = fmt.Sprintf("%s: %s", strings.Title(doc.Metadata.Category), doc.Metadata.Title)
+	}
+
+	// Create annotations with metadata
+	annotations := map[string]string{
+		"category":     doc.Metadata.Category,
+		"path":         doc.Metadata.Path,
+		"lastModified": doc.Metadata.LastModified.Format(time.RFC3339),
+		"size":         fmt.Sprintf("%d", doc.Metadata.Size),
+		"checksum":     doc.Metadata.Checksum,
+	}
+
+	return models.MCPResource{
+		URI:         uri,
+		Name:        doc.Metadata.Title,
+		Description: description,
+		MimeType:    "text/markdown",
+		Annotations: annotations,
+	}
+}
+
+// generateResourceURI creates an MCP resource URI based on category and path
+func (s *MCPServer) generateResourceURI(category, path string) string {
+	// Remove file extension and normalize path
+	cleanPath := strings.TrimSuffix(path, ".md")
+	cleanPath = filepath.ToSlash(cleanPath)
+
+	// Remove category prefix from path if present
+	switch category {
+	case "guideline":
+		cleanPath = strings.TrimPrefix(cleanPath, "docs/guidelines/")
+		return fmt.Sprintf("architecture://guidelines/%s", cleanPath)
+	case "pattern":
+		cleanPath = strings.TrimPrefix(cleanPath, "docs/patterns/")
+		return fmt.Sprintf("architecture://patterns/%s", cleanPath)
+	case "adr":
+		cleanPath = strings.TrimPrefix(cleanPath, "docs/adr/")
+		// For ADRs, extract ADR ID from filename if possible
+		adrId := s.extractADRId(cleanPath)
+		return fmt.Sprintf("architecture://adr/%s", adrId)
+	default:
+		return fmt.Sprintf("architecture://unknown/%s", cleanPath)
+	}
+}
+
+// extractADRId extracts ADR ID from filename or path
+func (s *MCPServer) extractADRId(path string) string {
+	// Get the base filename
+	filename := filepath.Base(path)
+
+	// Try to extract ADR number from common patterns like "001-api-design" or "adr-001"
+	patterns := []string{
+		`^(\d+)-`,    // "001-api-design"
+		`^adr-(\d+)`, // "adr-001"
+		`^ADR-(\d+)`, // "ADR-001"
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		if matches := re.FindStringSubmatch(filename); len(matches) > 1 {
+			return matches[1]
+		}
+	}
+
+	// If no pattern matches, use the filename without extension
+	return filename
 }
