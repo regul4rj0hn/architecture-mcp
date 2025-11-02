@@ -55,13 +55,13 @@
   - _Requirements: 1.1, 1.4_
 
 - [ ] 4. Implement core data models and validation
-- [ ] 4.1 Create document model structs
+- [x] 4.1 Create document model structs
   - Implement DocumentMetadata, DocumentContent, DocumentSection structs
   - Create ADRDocument struct with ADR-specific fields
   - Add JSON tags for proper serialization
   - _Requirements: 2.3, 3.5, 4.4_
 
-- [ ] 4.2 Implement document validation utilities
+- [x] 4.2 Implement document validation utilities
   - Write validation functions for document metadata extraction
   - Implement Markdown parsing utilities with header structure validation using goldmark
   - Create path sanitization functions to prevent directory traversal
