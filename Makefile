@@ -4,6 +4,12 @@
 BINARY_NAME=mcp-server
 BINARY_PATH=./bin/$(BINARY_NAME)
 MAIN_PATH=./cmd/mcp-server
+
+# Bridge server variables
+BRIDGE_BINARY_NAME=mcp-bridge
+BRIDGE_BINARY_PATH=./bin/$(BRIDGE_BINARY_NAME)
+BRIDGE_MAIN_PATH=./cmd/mcp-bridge
+
 DOCKER_IMAGE=mcp-architecture-service
 DOCKER_TAG=latest
 
@@ -30,6 +36,16 @@ build:
 	@mkdir -p bin
 	CGO_ENABLED=$(CGO_ENABLED) $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_PATH) $(MAIN_PATH)
 	@echo "Binary built: $(BINARY_PATH)"
+
+# Build the bridge server binary
+build-bridge:
+	@echo "Building $(BRIDGE_BINARY_NAME)..."
+	@mkdir -p bin
+	CGO_ENABLED=$(CGO_ENABLED) $(GOBUILD) $(BUILD_FLAGS) -o $(BRIDGE_BINARY_PATH) $(BRIDGE_MAIN_PATH)
+	@echo "Bridge server binary built: $(BRIDGE_BINARY_PATH)"
+
+# Build all binaries
+build-all: build build-bridge
 
 # Build for Linux (useful for Docker)
 build-linux:
@@ -71,6 +87,16 @@ tidy:
 run: build
 	@echo "Running $(BINARY_NAME)..."
 	$(BINARY_PATH)
+
+# Run the bridge server
+run-bridge: build build-bridge
+	@echo "Running $(BRIDGE_BINARY_NAME)..."
+	$(BRIDGE_BINARY_PATH)
+
+# Run the bridge server with custom port
+run-bridge-port: build build-bridge
+	@echo "Running $(BRIDGE_BINARY_NAME) on port 8081..."
+	$(BRIDGE_BINARY_PATH) -port 8081
 
 # Run in development mode (with file watching)
 dev:
@@ -234,6 +260,8 @@ help:
 	@echo "Available targets:"
 	@echo "  all                    - Clean, download deps, and build"
 	@echo "  build                  - Build the binary"
+	@echo "  build-bridge           - Build the MCP bridge server binary"
+	@echo "  build-all              - Build all binaries"
 	@echo "  build-linux            - Build the binary for Linux"
 	@echo "  clean                  - Clean build artifacts"
 	@echo "  test                   - Run tests"
@@ -241,6 +269,8 @@ help:
 	@echo "  deps                   - Download dependencies"
 	@echo "  tidy                   - Tidy go.mod"
 	@echo "  run                    - Build and run the application"
+	@echo "  run-bridge             - Build and run the MCP bridge server"
+	@echo "  run-bridge-port        - Run the MCP bridge server on port 8081"
 	@echo "  dev                    - Run in development mode"
 	@echo "  docker-build           - Build Docker image"
 	@echo "  docker-build-secure    - Build Docker image with security scanning"
