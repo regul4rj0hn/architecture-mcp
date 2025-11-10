@@ -26,6 +26,7 @@ type MCPServerInfo struct {
 // MCPCapabilities represents server capabilities
 type MCPCapabilities struct {
 	Resources *MCPResourceCapabilities `json:"resources,omitempty"`
+	Prompts   *MCPPromptCapabilities   `json:"prompts,omitempty"`
 }
 
 // MCPResourceCapabilities represents resource-related capabilities

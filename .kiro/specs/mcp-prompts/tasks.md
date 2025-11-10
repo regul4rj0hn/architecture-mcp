@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Create prompt data models and protocol structures
+- [x] 1. Create prompt data models and protocol structures
   - Create `internal/models/prompt.go` with MCP prompt protocol structures (MCPPrompt, MCPPromptArgument, MCPPromptsListResult, MCPPromptsGetParams, MCPPromptMessage, MCPPromptContent, MCPPromptsGetResult)
   - Add MCPPromptCapabilities struct to support prompts capability declaration
   - _Requirements: 1.1, 1.2_
