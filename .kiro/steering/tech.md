@@ -1,75 +1,50 @@
+---
+inclusion: always
+---
+
 # Technology Stack & Build System
 
-## Core Technologies
+## Stack
 
-- **Language**: Go 1.21+
-- **Protocol**: Model Context Protocol (MCP) - JSON-RPC 2.0 over stdio
-- **Runtime**: Alpine Linux containers
-- **File Monitoring**: fsnotify library for real-time documentation updates
+- **Go 1.21+** - Use standard library where possible
+- **fsnotify v1.7.0** - File system monitoring (only external dependency)
+- **JSON-RPC 2.0 over stdio** - No HTTP, no network ports
+- **Alpine Linux containers** - Production runtime
 
-## Dependencies
+## Build Commands
 
-```go
-// Core dependencies from go.mod
-github.com/fsnotify/fsnotify v1.7.0  // File system monitoring
-golang.org/x/sys v0.4.0              // System calls (indirect)
-```
+Use Makefile for all operations:
 
-## Build System
-
-Uses Make for build automation. Key commands:
-
-### Development
 ```bash
-make dev          # Run in development mode
-make run          # Build and run
-make test         # Run tests
-make test-coverage # Run tests with coverage report
+# Development
+make dev           # Run with hot reload
+make test          # Run all tests
+make test-coverage # Generate coverage report
+
+# Building
+make build         # Build to ./bin/mcp-server
+make fmt           # Format code (run before commits)
+make vet           # Static analysis
+
+# Docker
+make docker-build  # Build container image
+make docker-run    # Run containerized server
+
+# Kubernetes
+make k8s-deploy    # Deploy to cluster
 ```
 
-### Building
-```bash
-make build        # Build binary to ./bin/mcp-server
-make build-linux  # Build for Linux (Docker compatible)
-make deps         # Download dependencies
-make tidy         # Clean up go.mod
-```
+## Build Requirements
 
-### Code Quality
-```bash
-make fmt          # Format code
-make vet          # Vet code
-make lint         # Lint code (requires golangci-lint)
-```
+- **CGO disabled** (`CGO_ENABLED=0`) - Static binaries only
+- **Build flags**: `-ldflags="-s -w"` - Strip debug info
+- **Target**: Linux AMD64 for containers
+- **Output**: `./bin/mcp-server`
 
-### Docker
-```bash
-make docker-build        # Build Docker image
-make docker-build-secure # Build with security scanning
-make docker-run          # Run container
-make docker-run-secure   # Run with enhanced security
-make docker-test         # Test MCP initialization
-```
+## Security Constraints
 
-### Kubernetes
-```bash
-make k8s-deploy          # Deploy to Kubernetes
-make k8s-undeploy        # Remove deployment
-make k8s-test-security   # Test security configuration
-```
-
-## Build Configuration
-
-- **CGO**: Disabled (`CGO_ENABLED=0`) for static binaries
-- **Build Flags**: `-ldflags="-s -w"` for smaller binaries
-- **Target**: Linux AMD64 for container deployment
-- **Binary Location**: `./bin/mcp-server`
-
-## Container Security
-
-- Multi-stage Docker builds
-- Non-root user (UID 1001)
-- Read-only root filesystem
-- Security options: `no-new-privileges:true`
+When writing code, remember:
+- Run as non-root (UID 1001) in containers
+- Read-only root filesystem - no file writes outside /tmp
+- No network listeners - stdio communication only
 - Resource limits: 256M memory, 0.2 CPU
-- Health checks via process monitoring

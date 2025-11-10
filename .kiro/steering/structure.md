@@ -1,64 +1,90 @@
-# Project Structure & Organization
+---
+inclusion: always
+---
 
-## Directory Layout
+# Code Organization & Style
+
+## Directory Structure
 
 ```
-.
-├── cmd/
-│   └── mcp-server/          # Main application entry point
-│       ├── main.go          # Application bootstrap and signal handling
-│       └── main_test.go     # Main package tests
-├── internal/                # Private application code
-│   ├── models/              # Data models and structures
-│   │   ├── document.go      # Document representation models
-│   │   ├── mcp.go          # MCP protocol message structures
-│   │   └── mcp_test.go     # MCP model tests
-│   └── server/              # MCP server implementation
-│       ├── server.go        # Core server logic and message handling
-│       └── server_test.go   # Server tests
-├── pkg/                     # Public/reusable packages
-│   ├── cache/               # In-memory caching system
-│   ├── monitor/             # File system monitoring
-│   └── scanner/             # Documentation scanning and parsing
-├── docs/                    # Documentation files (monitored by service)
-│   ├── guidelines/          # Architectural guidelines
-│   ├── patterns/            # Design patterns
-│   └── adr/                 # Architecture Decision Records
-├── bin/                     # Built binaries
-├── Dockerfile               # Container build configuration
-├── docker-compose.yml       # Local container orchestration
-├── k8s-deployment.yaml      # Kubernetes deployment manifests
-├── Makefile                 # Build automation
-├── go.mod                   # Go module definition
-└── go.sum                   # Dependency checksums
+cmd/mcp-server/     # Entry point: main.go with signal handling
+internal/models/    # document.go (docs), mcp.go (protocol messages)
+internal/server/    # MCP message handling logic
+pkg/cache/          # Thread-safe in-memory cache
+pkg/monitor/        # File system watcher (fsnotify)
+pkg/scanner/        # Documentation parser
+pkg/errors/         # Error handling, circuit breaker, graceful degradation
+pkg/logging/        # Structured logging
+pkg/validation/     # Input validation
+docs/               # Content: guidelines/, patterns/, adr/
 ```
 
-## Architecture Patterns
+## Package Rules
 
-### Package Organization
-- **cmd/**: Application entry points (main packages)
-- **internal/**: Private application code, not importable by external packages
-- **pkg/**: Public packages that could be imported by other projects
-- **docs/**: Content directory monitored by the service
+**Dependency flow**: `cmd/` → `internal/` → `pkg/`
+- `internal/` is private to this module
+- `pkg/` contains reusable utilities
+- Never import `internal/` from `pkg/`
 
-### Code Organization Principles
-- **Separation of Concerns**: Models, server logic, and utilities in separate packages
-- **Dependency Direction**: Internal packages depend on pkg packages, not vice versa
-- **Interface-Based Design**: Use interfaces for testability and modularity
-- **Error Handling**: Explicit error handling following Go conventions
+**Where to add new code**:
+- MCP handlers → `internal/server/server.go`
+- Protocol types → `internal/models/mcp.go`
+- Document types → `internal/models/document.go`
+- Utilities → `pkg/` subdirectories
+- Bootstrap → `cmd/mcp-server/main.go`
 
-### MCP Protocol Structure
-- **Message Handling**: Centralized in `internal/server/server.go`
-- **Protocol Models**: Defined in `internal/models/mcp.go`
-- **Resource Management**: Implemented across cache, monitor, and scanner packages
+## Go Style
 
-### Testing Strategy
-- Unit tests alongside source files (`*_test.go`)
-- Integration tests in `cmd/` for end-to-end scenarios
-- Test coverage reporting via `make test-coverage`
+**Errors**:
+- Return errors explicitly, never panic in production
+- Use `pkg/errors` for structured errors
+- Wrap with context: `fmt.Errorf("scan failed: %w", err)`
+- Log internally, return generic messages to clients
 
-### Security Considerations
-- Non-root container execution (UID 1001)
-- Read-only root filesystem with writable tmpfs mounts
-- Input validation for MCP resource URIs to prevent path traversal
-- No network exposure (stdio-only communication)
+**Concurrency**:
+- Use `sync.RWMutex` for read-heavy caches
+- File watcher runs in separate goroutine
+- Use channels for shutdown signals
+- Always protect shared state
+
+**Naming**:
+- Interfaces: `Scanner`, `Cacheable` (noun/adjective)
+- Constructors: `NewServer`, `NewCache` (New prefix)
+- Getters: `Resource()` not `GetResource()` (no Get prefix)
+- Private: lowercase first letter
+
+**Testing**:
+- Place `*_test.go` alongside source
+- Use table-driven tests with `t.Run()`
+- Mock external dependencies (filesystem, time)
+
+## Architecture
+
+**Separation of concerns**:
+- Models = data structures only (no logic)
+- Server = protocol orchestration
+- Pkg = single-purpose utilities
+
+**Interfaces**:
+- Define in consumer packages, not implementers
+- Keep small (1-3 methods)
+- Use for testability
+
+**Resources**:
+- Initialize in `main.go`
+- Pass dependencies explicitly (no globals)
+- Graceful shutdown with signal handling
+- Clean up with defer
+
+## Security
+
+**Path validation** (critical):
+- Always validate URIs before filesystem access
+- Use `filepath.Clean()` to normalize
+- Verify paths stay within `docs/` directory
+- Reject `..` traversal attempts
+
+**Container constraints**:
+- Non-root user (UID 1001)
+- Read-only root filesystem
+- No network listeners (stdio only)
