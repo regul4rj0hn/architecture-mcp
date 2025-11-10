@@ -5,19 +5,19 @@
   - Add MCPPromptCapabilities struct to support prompts capability declaration
   - _Requirements: 1.1, 1.2_
 
-- [ ] 2. Implement prompt definition and validation
-  - [ ] 2.1 Create prompt definition structures
+- [x] 2. Implement prompt definition and validation
+  - [x] 2.1 Create prompt definition structures
     - Create `pkg/prompts/definition.go` with PromptDefinition, ArgumentDefinition, MessageTemplate, and ContentTemplate structs
     - Implement JSON unmarshaling for loading prompt definitions from files
     - _Requirements: 4.1, 4.2_
   
-  - [ ] 2.2 Implement prompt validation logic
+  - [x] 2.2 Implement prompt validation logic
     - Implement Validate() method on PromptDefinition to check structure integrity
     - Implement ValidateArguments() method to validate user-provided arguments against definition
     - Add validation for prompt name pattern (^[a-z0-9-]+$), required arguments, and max length constraints
     - _Requirements: 2.2, 2.3, 4.2, 9.2, 9.3_
   
-  - [ ]* 2.3 Write unit tests for prompt definition
+  - [x] 2.3 Write unit tests for prompt definition
     - Create `pkg/prompts/definition_test.go` with tests for valid/invalid definitions and argument validation
     - _Requirements: 2.2, 2.3_
 
