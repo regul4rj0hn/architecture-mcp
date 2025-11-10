@@ -21,22 +21,22 @@
     - Create `pkg/prompts/definition_test.go` with tests for valid/invalid definitions and argument validation
     - _Requirements: 2.2, 2.3_
 
-- [ ] 3. Implement template rendering engine
-  - [ ] 3.1 Create template renderer
+- [x] 3. Implement template rendering engine
+  - [x] 3.1 Create template renderer
     - Create `pkg/prompts/renderer.go` with TemplateRenderer struct
     - Implement RenderTemplate() method for {{variable}} substitution
     - Implement EmbedResources() method for {{resource:uri}} pattern processing
     - Implement ResolveResourcePattern() method to match resource URIs and retrieve content from cache
     - _Requirements: 2.4, 2.5, 3.1, 3.2, 3.4, 3.5_
   
-  - [ ] 3.2 Add resource embedding logic
+  - [x] 3.2 Add resource embedding logic
     - Implement wildcard pattern matching for resource URIs (e.g., architecture://patterns/*)
     - Implement resource content retrieval from DocumentCache
     - Add error handling for missing resources with clear error messages
     - Implement size limits (50 resources max, 1MB total content max)
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
   
-  - [ ]* 3.3 Write unit tests for template rendering
+  - [x] 3.3 Write unit tests for template rendering
     - Create `pkg/prompts/renderer_test.go` with tests for variable substitution, resource embedding, and edge cases
     - _Requirements: 2.4, 2.5, 3.1, 3.2_
 
