@@ -51,14 +51,14 @@
   - Test input validation and size limits
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 6. Implement SearchArchitectureTool
-- [ ] 6.1 Create search_architecture.go with SearchArchitectureTool struct
+- [x] 6. Implement SearchArchitectureTool
+- [x] 6.1 Create search_architecture.go with SearchArchitectureTool struct
   - Implement Tool interface methods
   - Add constructor NewSearchArchitectureTool(cache *cache.DocumentCache)
   - Define input schema with query, resource_type, and max_results fields
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 6.2 Implement search and ranking logic
+- [x] 6.2 Implement search and ranking logic
   - Tokenize query and document content
   - Calculate relevance scores using keyword matching
   - Filter results by resource type
@@ -67,7 +67,7 @@
   - Return structured search results with URIs, titles, and excerpts
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ]* 6.3 Write unit tests for SearchArchitectureTool
+- [x] 6.3 Write unit tests for SearchArchitectureTool
   - Test search with various queries
   - Test resource type filtering
   - Test result limiting

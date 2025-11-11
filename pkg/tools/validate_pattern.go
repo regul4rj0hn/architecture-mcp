@@ -284,7 +284,7 @@ func (vpt *ValidatePatternTool) parseImplementation(content string) []validation
 }
 
 // checkRule checks if code violates a specific rule
-func (vpt *ValidatePatternTool) checkRule(code string, rule validationRule, language string) map[string]interface{} {
+func (vpt *ValidatePatternTool) checkRule(code string, rule validationRule, _language string) map[string]interface{} {
 	codeLower := strings.ToLower(code)
 
 	// Check for required keywords
@@ -349,7 +349,7 @@ func (vpt *ValidatePatternTool) checkRule(code string, rule validationRule, lang
 }
 
 // generateSuggestions creates actionable suggestions based on violations
-func (vpt *ValidatePatternTool) generateSuggestions(violations []map[string]interface{}, patternContent string) []string {
+func (vpt *ValidatePatternTool) generateSuggestions(violations []map[string]interface{}, _patternContent string) []string {
 	suggestions := []string{}
 	suggestionSet := make(map[string]bool)
 
