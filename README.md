@@ -14,12 +14,33 @@ The service exposes documentation through the following URI patterns:
 - `architecture://patterns/{path}` - Design patterns  
 - `architecture://adr/{adr_id}` - Architecture Decision Records
 
+## Available MCP Prompts
+
+The service provides interactive prompts that combine instructions with architectural documentation:
+
+- **review-code-against-patterns** - Review code against documented architectural patterns
+  - Arguments: `code` (required, max 10,000 chars), `language` (optional)
+  - Embeds relevant pattern documentation for comparison
+  
+- **suggest-patterns** - Suggest relevant patterns for a problem description
+  - Arguments: `problem` (required, max 2,000 chars)
+  - Embeds complete patterns catalog for analysis
+  
+- **create-adr** - Assist in creating a new Architecture Decision Record
+  - Arguments: `topic` (required)
+  - Embeds example ADRs and template structure
+
 ## MCP Protocol Support
 
+### Resources
 - `initialize` - Server initialization and capability negotiation
 - `notifications/initialized` - Initialization acknowledgment
 - `resources/list` - List all available documentation resources
 - `resources/read` - Read specific documentation resource content
+
+### Prompts
+- `prompts/list` - List all available interactive prompts
+- `prompts/get` - Invoke a prompt with arguments to get rendered content
 
 Communication via JSON-RPC 2.0 over stdio (local) or TCP (bridge mode).
 
@@ -47,7 +68,7 @@ Add to `.vscode/settings/mcp.json` in your workspace:
       "command": "nc",
       "args": ["localhost", "8080"],
       "disabled": false,
-      "autoApprove": ["resources/list", "resources/read"]
+      "autoApprove": ["resources/list", "resources/read", "prompts/list", "prompts/get"]
     }
   }
 }
@@ -82,6 +103,63 @@ docs/
 ```
 
 The server automatically detects and indexes new files.
+
+## Using Prompts
+
+### Example: Review Code Against Patterns
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "prompts/get",
+  "params": {
+    "name": "review-code-against-patterns",
+    "arguments": {
+      "code": "func ProcessOrder(order Order) error {\n  // implementation\n}",
+      "language": "go"
+    }
+  }
+}
+```
+
+The server will return a rendered prompt that includes your code and relevant pattern documentation for the AI to analyze.
+
+### Example: Suggest Patterns
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "prompts/get",
+  "params": {
+    "name": "suggest-patterns",
+    "arguments": {
+      "problem": "Need to handle multiple payment providers with different APIs"
+    }
+  }
+}
+```
+
+### Example: Create ADR
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "prompts/get",
+  "params": {
+    "name": "create-adr",
+    "arguments": {
+      "topic": "Adopting event-driven architecture for order processing"
+    }
+  }
+}
+```
+
+### Custom Prompts
+
+You can create custom prompts by adding JSON files to the `prompts/` directory. See `docs/prompts-guide.md` for detailed documentation on prompt definition format and template syntax.
 
 ## Development
 

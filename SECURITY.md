@@ -1,5 +1,74 @@
 # Security Configuration
 
+## Input Validation
+
+### Prompt Arguments
+
+The MCP Architecture Service validates all prompt arguments to prevent abuse and injection attacks:
+
+#### Argument Length Limits
+
+- **Code snippets**: Maximum 10,000 characters (configurable per prompt)
+- **Problem descriptions**: Maximum 2,000 characters (configurable per prompt)
+- **General arguments**: Configurable `maxLength` per argument definition
+- **Enforcement**: Arguments exceeding limits are rejected with error code -32602
+
+#### Argument Validation
+
+- **Required arguments**: Validated before prompt processing
+- **Type checking**: Arguments must match expected types
+- **Sanitization**: Argument values are sanitized to prevent template injection
+- **Error responses**: Clear error messages indicate validation failures
+
+#### Prompt Name Validation
+
+- **Pattern**: `^[a-z0-9-]+$` (lowercase alphanumeric and hyphens only)
+- **Purpose**: Prevents path traversal and injection attacks
+- **Enforcement**: Invalid prompt names rejected during loading and invocation
+
+### Resource Access Restrictions
+
+Prompts can only access resources through controlled mechanisms:
+
+#### Resource URI Validation
+
+- **Allowed schemes**: Only `architecture://` URIs permitted
+- **Path validation**: All paths validated with `filepath.Clean()` to prevent traversal
+- **Directory restrictions**: Access limited to configured `docs/` directory tree
+- **Pattern matching**: Wildcard patterns (`*`) validated and bounded
+
+#### Resource Embedding Limits
+
+To prevent denial-of-service attacks:
+
+- **Maximum resources per prompt**: 50 resources
+- **Maximum total content size**: 1MB per prompt invocation
+- **Enforcement**: Limits checked during template rendering
+- **Error handling**: Exceeding limits returns error code -32602
+
+#### Resource Content Security
+
+- **Read-only access**: Resources are read-only, no write operations permitted
+- **Cache-based retrieval**: All resources retrieved from validated document cache
+- **No arbitrary file access**: Cannot access files outside documented resource URIs
+- **Markdown only**: Only markdown files (`.md`) are processed as resources
+
+### Template Security
+
+#### Template Injection Prevention
+
+- **Variable substitution**: Uses safe string replacement, not code evaluation
+- **No code execution**: Templates cannot execute arbitrary code
+- **Bounded recursion**: No recursive template expansion
+- **Sanitized output**: All substituted values are treated as plain text
+
+#### Resource Pattern Security
+
+- **Pattern validation**: Resource patterns validated before filesystem access
+- **Bounded wildcards**: Wildcard patterns limited to single directory level
+- **No shell expansion**: Patterns processed internally, not passed to shell
+- **Error handling**: Invalid patterns return errors, not partial results
+
 ## Container Security
 
 ### Process Health Monitoring
@@ -100,6 +169,8 @@ Security monitoring capabilities:
 - Dependency vulnerability scanning
 - Static code analysis for security issues
 - Container image scanning before deployment
+- Prompt definition validation during development
+- Security review of custom prompts before deployment
 
 ### Operations
 
@@ -107,6 +178,9 @@ Security monitoring capabilities:
 - Resource usage monitoring and alerting
 - Security event logging and analysis
 - Incident response procedures for security events
+- Prompt invocation logging with sanitized arguments
+- Monitoring for unusual prompt usage patterns
+- Rate limiting considerations for prompt invocations
 
 ### Compliance
 

@@ -162,21 +162,21 @@
     - Add volume mount for prompts ConfigMap
     - _Requirements: 4.1_
 
-- [ ] 9. Update documentation
-  - [ ] 9.1 Update README.md
+- [x] 9. Update documentation
+  - [x] 9.1 Update README.md
     - Add section describing prompts capability
     - Document available built-in prompts
     - Provide examples of prompt invocation
     - _Requirements: 1.1, 2.1_
   
-  - [ ] 9.2 Create prompt definition guide
+  - [x] 9.2 Create prompt definition guide
     - Create `docs/prompts-guide.md` with prompt definition format documentation
     - Include JSON schema reference
     - Provide examples of custom prompt creation
     - Document template syntax ({{variable}}, {{resource:uri}})
     - _Requirements: 4.1, 4.2_
   
-  - [ ] 9.3 Update SECURITY.md
+  - [x] 9.3 Update SECURITY.md
     - Document input validation for prompt arguments
     - Document resource access restrictions
     - Document size limits and DoS prevention measures
