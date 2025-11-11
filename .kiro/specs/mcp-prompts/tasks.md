@@ -147,17 +147,17 @@
     - Track failed prompt invocations
     - _Requirements: 8.2, 8.4_
 
-- [ ] 8. Update Docker and Kubernetes configurations
-  - [ ] 8.1 Update Dockerfile
+- [x] 8. Update Docker and Kubernetes configurations
+  - [x] 8.1 Update Dockerfile
     - Add COPY instruction for prompts/ directory to Docker image
     - Add VOLUME declaration for prompts directory to support customization
     - _Requirements: 4.1_
   
-  - [ ] 8.2 Update docker-compose.yml
+  - [x] 8.2 Update docker-compose.yml
     - Add volume mount for prompts directory
     - _Requirements: 4.1_
   
-  - [ ] 8.3 Update Kubernetes deployment
+  - [x] 8.3 Update Kubernetes deployment
     - Add ConfigMap definition for prompt definitions in `k8s-deployment.yaml`
     - Add volume mount for prompts ConfigMap
     - _Requirements: 4.1_

@@ -29,6 +29,11 @@ services:
       - DOCS_PATH=/app/docs
       - TMPDIR=/app/tmp
     
+    # Volume mounts
+    volumes:
+      # Mount local prompts directory for customization
+      - ./prompts:/app/prompts:ro
+    
     # Volume mounts for writable directories
     tmpfs:
       - /app/tmp:size=100M,noexec,nosuid,nodev

@@ -1,3 +1,106 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-prompts-config
+  labels:
+    app: mcp-architecture-service
+data:
+  review-code-against-patterns.json: |
+    {
+      "name": "review-code-against-patterns",
+      "description": "Review code against documented architectural patterns",
+      "arguments": [
+        {
+          "name": "code",
+          "description": "The code snippet to review",
+          "required": true,
+          "maxLength": 10000
+        },
+        {
+          "name": "language",
+          "description": "Programming language of the code",
+          "required": false
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": {
+            "type": "text",
+            "text": "Review the following {{language}} code against our architectural patterns:\n\n```{{language}}\n{{code}}\n```\n\nConsider the following patterns from our documentation:\n\n{{resource:architecture://patterns/*}}"
+          }
+        }
+      ]
+    }
+  suggest-patterns.json: |
+    {
+      "name": "suggest-patterns",
+      "description": "Suggest relevant architectural patterns for a problem",
+      "arguments": [
+        {
+          "name": "problem",
+          "description": "Description of the problem or requirement",
+          "required": true,
+          "maxLength": 2000
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": {
+            "type": "text",
+            "text": "I need help with the following problem:\n\n{{problem}}\n\nBased on our architectural patterns catalog:\n\n{{resource:architecture://patterns/*}}\n\nWhich patterns would be most relevant and why?"
+          }
+        }
+      ]
+    }
+  create-adr.json: |
+    {
+      "name": "create-adr",
+      "description": "Create a new Architecture Decision Record",
+      "arguments": [
+        {
+          "name": "decision",
+          "description": "The architectural decision to document",
+          "required": true,
+          "maxLength": 2000
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": {
+            "type": "text",
+            "text": "Help me create an ADR for the following decision:\n\n{{decision}}\n\nHere are examples of our existing ADRs:\n\n{{resource:architecture://adr/*}}\n\nPlease draft a new ADR following our template format with:\n- Title\n- Status\n- Context\n- Decision\n- Consequences"
+          }
+        }
+      ]
+    }
+  test-prompt.json: |
+    {
+      "name": "test-prompt",
+      "description": "A simple test prompt for validation",
+      "arguments": [
+        {
+          "name": "message",
+          "description": "A test message",
+          "required": true,
+          "maxLength": 1000
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": {
+            "type": "text",
+            "text": "Test message: {{message}}"
+          }
+        }
+      ]
+    }
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -70,6 +173,9 @@ spec:
           mountPath: /app/tmp
         - name: logs-volume
           mountPath: /app/logs
+        - name: prompts-volume
+          mountPath: /app/prompts
+          readOnly: true
         
         # Liveness probe using the health check script
         livenessProbe:
@@ -112,6 +218,9 @@ spec:
       - name: logs-volume
         emptyDir:
           sizeLimit: 100Mi
+      - name: prompts-volume
+        configMap:
+          name: mcp-prompts-config
       
       # Additional security configurations
       automountServiceAccountToken: false
