@@ -110,24 +110,24 @@
     - Update `internal/server/server_test.go` with tests for prompts/list and prompts/get handlers
     - _Requirements: 1.1, 2.1_
 
-- [ ] 6. Create built-in prompt definitions
-  - [ ] 6.1 Create prompts directory structure
+- [x] 6. Create built-in prompt definitions
+  - [x] 6.1 Create prompts directory structure
     - Create `prompts/` directory in project root
     - _Requirements: 4.1_
   
-  - [ ] 6.2 Create review-code-against-patterns prompt
+  - [x] 6.2 Create review-code-against-patterns prompt
     - Create `prompts/review-code-against-patterns.json` with code and language arguments
     - Include resource embedding for architecture://patterns/* in template
     - Add instructions for comparing code against documented patterns
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
   
-  - [ ] 6.3 Create suggest-patterns prompt
+  - [x] 6.3 Create suggest-patterns prompt
     - Create `prompts/suggest-patterns.json` with problem description argument
     - Include resource embedding for complete patterns catalog
     - Add instructions for analyzing problem and recommending patterns
     - _Requirements: 6.1, 6.2, 6.3, 6.4_
   
-  - [ ] 6.4 Create create-adr prompt
+  - [x] 6.4 Create create-adr prompt
     - Create `prompts/create-adr.json` with decision topic argument
     - Include resource embedding for example ADRs
     - Add ADR template structure and generation instructions

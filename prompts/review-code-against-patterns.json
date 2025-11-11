@@ -1,0 +1,26 @@
+{
+  "name": "review-code-against-patterns",
+  "description": "Review code against documented architectural patterns",
+  "arguments": [
+    {
+      "name": "code",
+      "description": "The code snippet to review",
+      "required": true,
+      "maxLength": 10000
+    },
+    {
+      "name": "language",
+      "description": "Programming language of the code",
+      "required": false
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Please review the following {{language}} code against our architectural patterns and best practices.\n\n# Code to Review\n\n```{{language}}\n{{code}}\n```\n\n# Architectural Patterns\n\nConsider the following patterns from our documentation:\n\n{{resource:architecture://patterns/*}}\n\n# Review Instructions\n\nPlease analyze the code and:\n1. Identify which architectural patterns are being used or should be used\n2. Check if the implementation follows the documented patterns correctly\n3. Highlight any deviations from best practices\n4. Suggest improvements to better align with our architectural guidelines\n5. Note any potential issues with maintainability, testability, or scalability\n\nProvide specific, actionable feedback with code examples where appropriate."
+      }
+    }
+  ]
+}

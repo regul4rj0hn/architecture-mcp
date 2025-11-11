@@ -1,0 +1,21 @@
+{
+  "name": "suggest-patterns",
+  "description": "Suggest relevant architectural patterns for a problem description",
+  "arguments": [
+    {
+      "name": "problem",
+      "description": "Description of the problem or requirement",
+      "required": true,
+      "maxLength": 2000
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "I need help identifying the most appropriate architectural patterns for the following problem:\n\n# Problem Description\n\n{{problem}}\n\n# Available Patterns\n\nHere is our complete catalog of documented architectural patterns:\n\n{{resource:architecture://patterns/*}}\n\n# Analysis Instructions\n\nPlease analyze the problem and:\n1. Identify which patterns from our catalog are most relevant\n2. Explain why each suggested pattern is appropriate for this problem\n3. Describe how the pattern would be applied in this context\n4. Highlight any trade-offs or considerations for each pattern\n5. Recommend a primary pattern and any complementary patterns\n6. Provide a brief implementation approach using the recommended patterns\n\nFocus on patterns that are documented in our catalog and provide specific guidance on how to apply them."
+      }
+    }
+  ]
+}

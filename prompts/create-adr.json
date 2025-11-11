@@ -1,0 +1,21 @@
+{
+  "name": "create-adr",
+  "description": "Create a new Architecture Decision Record (ADR) following our template",
+  "arguments": [
+    {
+      "name": "topic",
+      "description": "The architectural decision topic or title",
+      "required": true,
+      "maxLength": 2000
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Please help me create a new Architecture Decision Record (ADR) for the following topic:\n\n# Decision Topic\n\n{{topic}}\n\n# ADR Template and Examples\n\nHere is our ADR template and example ADRs to follow:\n\n{{resource:architecture://adr/adr-template}}\n\n{{resource:architecture://adr/adr-example}}\n\n{{resource:architecture://adr/001-microservices-architecture}}\n\n# Instructions\n\nPlease create a draft ADR that:\n1. Follows the structure defined in our ADR template\n2. Includes all required sections: Title, Status, Context, Decision, Consequences\n3. Uses a similar style and level of detail as the example ADRs\n4. Provides a clear and concise explanation of the decision\n5. Considers both positive and negative consequences\n6. Uses appropriate technical language and terminology\n\nThe ADR should be ready to save as a markdown file with minimal editing. Include a suggested filename in the format `NNN-kebab-case-title.md` where NNN is the next available number."
+      }
+    }
+  ]
+}
