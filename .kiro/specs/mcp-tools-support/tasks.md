@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Create core tools infrastructure
+- [x] 1. Create core tools infrastructure
   - Implement Tool interface and base types in `pkg/tools/definition.go`
   - Create ToolManager with registry and lifecycle management in `pkg/tools/manager.go`
   - Implement ToolExecutor with validation, timeout, and security in `pkg/tools/executor.go`
