@@ -96,8 +96,15 @@ docs/               # Project documentation (separate from MCP resources)
 - Use early returns to avoid nested if-else statements
 - Keep nesting depth ≤ 3 levels
 - Extract magic strings/numbers to named constants
-- Comments explain WHY, not WHAT
 - Run `go fmt` before committing
+
+**Commenting guidelines**:
+- MUST NOT write comments that explain WHAT code does (obvious from code)
+- DO WRITE comments that explain WHY decisions were made
+- ALWAYS document non-obvious business logic
+- Explain rationale for magic numbers, timeouts, and thresholds
+- Document performance trade-offs and optimization decisions
+- Clarify security considerations and validation rules
 
 **Idiomatic patterns**:
 - Use table-driven tests with `t.Run()`

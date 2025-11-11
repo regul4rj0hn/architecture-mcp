@@ -154,17 +154,16 @@ func (s *MCPServer) processScanResultsConcurrent(indexes map[string]*models.Docu
 }
 
 // loadDocumentsConcurrent loads multiple documents into cache concurrently
+// Worker pool size is capped to balance parallelism with resource usage
 func (s *MCPServer) loadDocumentsConcurrent(documents []models.DocumentMetadata, scanErrors *[]string) {
-	// Use worker pool for concurrent document loading
 	numWorkers := min(runtime.NumCPU(), len(documents))
 	if numWorkers > 4 {
-		numWorkers = 4 // Cap workers to avoid excessive goroutines
+		numWorkers = 4
 	}
 
 	docChan := make(chan models.DocumentMetadata, len(documents))
 	errorChan := make(chan error, len(documents))
 
-	// Start workers
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
@@ -178,19 +177,16 @@ func (s *MCPServer) loadDocumentsConcurrent(documents []models.DocumentMetadata,
 		}()
 	}
 
-	// Send documents to workers
 	for _, doc := range documents {
 		docChan <- doc
 	}
 	close(docChan)
 
-	// Wait for workers to complete
 	go func() {
 		wg.Wait()
 		close(errorChan)
 	}()
 
-	// Collect errors
 	for err := range errorChan {
 		*scanErrors = append(*scanErrors, err.Error())
 		s.logger.WithError(err).Warn("Failed to load document into cache")

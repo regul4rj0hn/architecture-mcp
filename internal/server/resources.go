@@ -36,41 +36,39 @@ func (s *MCPServer) createMCPResourceFromDocument(doc *models.Document) models.M
 		URI:         uri,
 		Name:        doc.Metadata.Title,
 		Description: description,
-		MimeType:    "text/markdown",
+		MimeType:    config.MimeTypeMarkdown,
 		Annotations: annotations,
 	}
 }
 
 // generateResourceURI creates an MCP resource URI based on category and path
+// Normalizes filesystem paths to consistent URI format for MCP protocol
 func (s *MCPServer) generateResourceURI(category, path string) string {
-	// Remove file extension and normalize path
-	cleanPath := strings.TrimSuffix(path, ".md")
+	cleanPath := strings.TrimSuffix(path, config.MarkdownExtension)
 	cleanPath = filepath.ToSlash(cleanPath)
 
-	// Remove category prefix from path if present
 	switch category {
-	case "guideline":
+	case config.CategoryGuideline:
 		cleanPath = strings.TrimPrefix(cleanPath, config.GuidelinesPath+"/")
-		return fmt.Sprintf("architecture://guidelines/%s", cleanPath)
-	case "pattern":
+		return fmt.Sprintf("%s%s/%s", config.URIScheme, config.URIGuidelines, cleanPath)
+	case config.CategoryPattern:
 		cleanPath = strings.TrimPrefix(cleanPath, config.PatternsPath+"/")
-		return fmt.Sprintf("architecture://patterns/%s", cleanPath)
-	case "adr":
+		return fmt.Sprintf("%s%s/%s", config.URIScheme, config.URIPatterns, cleanPath)
+	case config.CategoryADR:
 		cleanPath = strings.TrimPrefix(cleanPath, config.ADRPath+"/")
-		// For ADRs, extract ADR ID from filename if possible
+		// ADRs use numeric IDs for cleaner URIs (e.g., "001" instead of "001-api-design")
 		adrId := s.extractADRId(cleanPath)
-		return fmt.Sprintf("architecture://adr/%s", adrId)
+		return fmt.Sprintf("%s%s/%s", config.URIScheme, config.URIADR, adrId)
 	default:
-		return fmt.Sprintf("architecture://unknown/%s", cleanPath)
+		return fmt.Sprintf("%s%s/%s", config.URIScheme, config.URIUnknown, cleanPath)
 	}
 }
 
 // extractADRId extracts ADR ID from filename or path
+// Supports multiple ADR naming conventions for flexibility
 func (s *MCPServer) extractADRId(path string) string {
-	// Get the base filename
 	filename := filepath.Base(path)
 
-	// Try to extract ADR number from common patterns like "001-api-design" or "adr-001"
 	patterns := []string{
 		`^(\d+)-`,    // "001-api-design"
 		`^adr-(\d+)`, // "adr-001"
@@ -84,38 +82,29 @@ func (s *MCPServer) extractADRId(path string) string {
 		}
 	}
 
-	// If no pattern matches, use the filename without extension
 	return filename
 }
 
 // parseResourceURI parses an MCP resource URI and returns category and path
 func (s *MCPServer) parseResourceURI(uri string) (category, path string, err error) {
-	// Expected URI patterns:
-	// architecture://guidelines/{path}
-	// architecture://patterns/{path}
-	// architecture://adr/{adr_id}
-
-	if !strings.HasPrefix(uri, "architecture://") {
+	if !strings.HasPrefix(uri, config.URIScheme) {
 		return "", "", errors.NewValidationError(errors.ErrCodeInvalidURI,
 			"Invalid resource URI", nil).
 			WithContext("uri", uri)
 	}
 
-	// Remove the scheme prefix
-	remainder := strings.TrimPrefix(uri, "architecture://")
+	remainder := strings.TrimPrefix(uri, config.URIScheme)
 
-	// Split into category and path
 	parts := strings.SplitN(remainder, "/", 2)
 	if len(parts) < 2 {
 		return "", "", errors.NewValidationError(errors.ErrCodeInvalidURI,
-			"Invalid URI format, expected 'architecture://{category}/{path}'", nil).
+			config.URIFormatError, nil).
 			WithContext("uri", uri)
 	}
 
 	category = parts[0]
 	path = parts[1]
 
-	// Validate path is not empty and doesn't start with slash
 	if path == "" || strings.HasPrefix(path, "/") {
 		return "", "", errors.NewValidationError(errors.ErrCodeInvalidURI,
 			"Invalid URI format, path cannot be empty or start with '/'", nil).
@@ -123,7 +112,6 @@ func (s *MCPServer) parseResourceURI(uri string) (category, path string, err err
 			WithContext("path", path)
 	}
 
-	// Check for path traversal attempts
 	if strings.Contains(path, "..") || strings.Contains(path, "\\") {
 		return "", "", errors.NewValidationError(errors.ErrCodePathTraversal,
 			"Path traversal attempt detected", nil).
@@ -131,14 +119,13 @@ func (s *MCPServer) parseResourceURI(uri string) (category, path string, err err
 			WithContext("path", path)
 	}
 
-	// Validate category
 	switch category {
-	case "guidelines":
-		return "guideline", path, nil
-	case "patterns":
-		return "pattern", path, nil
-	case "adr":
-		return "adr", path, nil
+	case config.URIGuidelines:
+		return config.CategoryGuideline, path, nil
+	case config.URIPatterns:
+		return config.CategoryPattern, path, nil
+	case config.URIADR:
+		return config.CategoryADR, path, nil
 	default:
 		return "", "", errors.NewValidationError(errors.ErrCodeInvalidCategory,
 			"unsupported resource category", nil).
@@ -148,10 +135,10 @@ func (s *MCPServer) parseResourceURI(uri string) (category, path string, err err
 }
 
 // findDocumentByResourcePath finds a document in the cache by category and resource path
+// Uses two-phase lookup: URI matching first, then filesystem path fallback
 func (s *MCPServer) findDocumentByResourcePath(category, resourcePath string) (*models.Document, error) {
 	documents := s.cache.GetByCategory(category)
 
-	// Check if we have documents for this category
 	if len(documents) == 0 {
 		return nil, errors.NewFileSystemError(errors.ErrCodeFileNotFound,
 			"Resource not found", nil).
@@ -159,24 +146,21 @@ func (s *MCPServer) findDocumentByResourcePath(category, resourcePath string) (*
 			WithContext("resourcePath", resourcePath)
 	}
 
-	// For each document, generate its resource URI and compare with the requested path
+	// Phase 1: Match by generated URI (handles normalized paths)
 	for _, doc := range documents {
 		docResourceURI := s.generateResourceURI(doc.Metadata.Category, doc.Metadata.Path)
 
-		// Extract the path part from the generated URI for comparison
 		_, docResourcePath, err := s.parseResourceURI(docResourceURI)
 		if err != nil {
-			continue // Skip malformed URIs
+			continue
 		}
 
-		// Compare paths (case-insensitive)
 		if strings.EqualFold(docResourcePath, resourcePath) {
 			return doc, nil
 		}
 	}
 
-	// If no exact match found, try direct path lookup in cache
-	// This handles cases where the resource path might be a direct file path
+	// Phase 2: Try direct filesystem path lookup (handles edge cases)
 	possiblePaths := s.generatePossibleFilePaths(category, resourcePath)
 
 	for _, possiblePath := range possiblePaths {
@@ -192,37 +176,35 @@ func (s *MCPServer) findDocumentByResourcePath(category, resourcePath string) (*
 }
 
 // generatePossibleFilePaths generates possible file paths for a given category and resource path
+// ADRs support multiple naming conventions to accommodate different team preferences
 func (s *MCPServer) generatePossibleFilePaths(category, resourcePath string) []string {
 	var paths []string
 
-	// Add .md extension if not present
-	if !strings.HasSuffix(resourcePath, ".md") {
-		resourcePath += ".md"
+	if !strings.HasSuffix(resourcePath, config.MarkdownExtension) {
+		resourcePath += config.MarkdownExtension
 	}
 
 	switch category {
-	case "guideline":
+	case config.CategoryGuideline:
 		paths = append(paths, filepath.Join(config.GuidelinesPath, resourcePath))
-	case "pattern":
+	case config.CategoryPattern:
 		paths = append(paths, filepath.Join(config.PatternsPath, resourcePath))
-	case "adr":
-		// For ADRs, try different naming patterns
-		adrId := strings.TrimSuffix(resourcePath, ".md")
+	case config.CategoryADR:
+		adrId := strings.TrimSuffix(resourcePath, config.MarkdownExtension)
 
-		// Try various ADR naming patterns
 		patterns := []string{
-			fmt.Sprintf("%s.md", adrId),
-			fmt.Sprintf("adr-%s.md", adrId),
-			fmt.Sprintf("ADR-%s.md", adrId),
-			fmt.Sprintf("%03s.md", adrId), // Zero-padded numbers
+			fmt.Sprintf("%s%s", adrId, config.MarkdownExtension),
+			fmt.Sprintf("adr-%s%s", adrId, config.MarkdownExtension),
+			fmt.Sprintf("ADR-%s%s", adrId, config.MarkdownExtension),
+			fmt.Sprintf("%03s%s", adrId, config.MarkdownExtension),
 		}
 
 		for _, pattern := range patterns {
 			paths = append(paths, filepath.Join(config.ADRPath, pattern))
 		}
 
-		// Also try to find by ADR ID in existing documents
-		allDocs := s.cache.GetByCategory("adr")
+		// Fallback: search existing documents for partial ID matches
+		allDocs := s.cache.GetByCategory(config.CategoryADR)
 		for _, doc := range allDocs {
 			docURI := s.generateResourceURI(doc.Metadata.Category, doc.Metadata.Path)
 			if strings.Contains(docURI, adrId) {

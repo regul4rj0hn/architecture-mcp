@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 )
 
@@ -107,7 +108,6 @@ func (s *MCPServer) handleResourcesRead(message *models.MCPMessage) *models.MCPM
 	})
 
 	if err != nil {
-		// Check if it's a circuit breaker error or actual resource error
 		if structuredErr, ok := err.(*errors.StructuredError); ok {
 			return s.createStructuredErrorResponse(message.ID, structuredErr)
 		}
@@ -123,7 +123,7 @@ func (s *MCPServer) handleResourcesRead(message *models.MCPMessage) *models.MCPM
 	// Create resource content response
 	content := models.MCPResourceContent{
 		URI:      params.URI,
-		MimeType: "text/markdown",
+		MimeType: config.MimeTypeMarkdown,
 		Text:     document.Content.RawContent,
 	}
 
@@ -184,34 +184,7 @@ func (s *MCPServer) handlePromptsGet(message *models.MCPMessage) *models.MCPMess
 	// Render the prompt with provided arguments
 	result, err := s.promptManager.RenderPrompt(params.Name, params.Arguments)
 	if err != nil {
-		// Check if it's a prompt not found error
-		if strings.Contains(err.Error(), "prompt not found") {
-			structuredErr := errors.NewValidationError(errors.ErrCodeInvalidParams,
-				"Prompt not found", err).WithContext("prompt_name", params.Name)
-			return s.createStructuredErrorResponse(message.ID, structuredErr)
-		}
-
-		// Check if it's an argument validation error
-		if strings.Contains(err.Error(), "argument validation failed") ||
-			strings.Contains(err.Error(), "required argument missing") ||
-			strings.Contains(err.Error(), "exceeds maximum length") {
-			structuredErr := errors.NewValidationError(errors.ErrCodeInvalidParams,
-				err.Error(), err).WithContext("prompt_name", params.Name)
-			return s.createStructuredErrorResponse(message.ID, structuredErr)
-		}
-
-		// Check if it's a resource embedding error
-		if strings.Contains(err.Error(), "failed to embed resources") ||
-			strings.Contains(err.Error(), "resource not found") {
-			structuredErr := errors.NewMCPError(errors.ErrCodeResourceNotFound,
-				"Failed to embed resources", err).WithContext("prompt_name", params.Name)
-			return s.createStructuredErrorResponse(message.ID, structuredErr)
-		}
-
-		// Generic error
-		structuredErr := errors.NewMCPError(errors.ErrCodeInvalidParams,
-			"Failed to render prompt", err).WithContext("prompt_name", params.Name)
-		return s.createStructuredErrorResponse(message.ID, structuredErr)
+		return s.handlePromptRenderError(message.ID, params.Name, err)
 	}
 
 	return &models.MCPMessage{
@@ -219,6 +192,34 @@ func (s *MCPServer) handlePromptsGet(message *models.MCPMessage) *models.MCPMess
 		ID:      message.ID,
 		Result:  result,
 	}
+}
+
+// handlePromptRenderError creates appropriate error response based on prompt rendering error
+func (s *MCPServer) handlePromptRenderError(id interface{}, promptName string, err error) *models.MCPMessage {
+	if strings.Contains(err.Error(), "prompt not found") {
+		structuredErr := errors.NewValidationError(errors.ErrCodeInvalidParams,
+			"Prompt not found", err).WithContext("prompt_name", promptName)
+		return s.createStructuredErrorResponse(id, structuredErr)
+	}
+
+	if strings.Contains(err.Error(), "argument validation failed") ||
+		strings.Contains(err.Error(), "required argument missing") ||
+		strings.Contains(err.Error(), "exceeds maximum length") {
+		structuredErr := errors.NewValidationError(errors.ErrCodeInvalidParams,
+			err.Error(), err).WithContext("prompt_name", promptName)
+		return s.createStructuredErrorResponse(id, structuredErr)
+	}
+
+	if strings.Contains(err.Error(), "failed to embed resources") ||
+		strings.Contains(err.Error(), "resource not found") {
+		structuredErr := errors.NewMCPError(errors.ErrCodeResourceNotFound,
+			"Failed to embed resources", err).WithContext("prompt_name", promptName)
+		return s.createStructuredErrorResponse(id, structuredErr)
+	}
+
+	structuredErr := errors.NewMCPError(errors.ErrCodeInvalidParams,
+		"Failed to render prompt", err).WithContext("prompt_name", promptName)
+	return s.createStructuredErrorResponse(id, structuredErr)
 }
 
 // handlePerformanceMetrics handles requests for server performance metrics

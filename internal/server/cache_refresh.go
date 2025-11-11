@@ -7,22 +7,20 @@ import (
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 )
 
 // handleFileEvent processes file system events and queues them for cache refresh
 func (s *MCPServer) handleFileEvent(event models.FileEvent) {
-	// Only process markdown files
-	if !strings.HasSuffix(strings.ToLower(event.Path), ".md") {
+	if !strings.HasSuffix(strings.ToLower(event.Path), config.MarkdownExtension) {
 		return
 	}
 
-	// Send event to refresh coordinator via channel
 	select {
 	case s.refreshChan <- event:
-		// Event queued successfully
 	default:
-		// Channel is full, log warning but don't block
+		// Non-blocking send prevents file monitor from blocking on full channel
 		s.logger.WithContext("event_path", event.Path).
 			WithContext("event_type", event.Type).
 			Warn("Refresh channel full, dropping file event")
@@ -30,8 +28,8 @@ func (s *MCPServer) handleFileEvent(event models.FileEvent) {
 }
 
 // cacheRefreshCoordinator coordinates cache updates from file system events
+// Uses debouncing to batch rapid file changes and reduce cache thrashing
 func (s *MCPServer) cacheRefreshCoordinator(ctx context.Context) {
-	// Debounce timer to batch multiple rapid changes
 	var debounceTimer *time.Timer
 	pendingEvents := make(map[string]models.FileEvent)
 
@@ -54,10 +52,8 @@ func (s *MCPServer) cacheRefreshCoordinator(ctx context.Context) {
 
 		refreshDuration := time.Since(refreshStart)
 
-		// Log cache refresh operation
 		s.loggingManager.LogCacheRefresh("batch_refresh", affectedFiles, refreshDuration, true)
 
-		// Log cache statistics after refresh
 		s.logger.WithContext("total_documents", s.cache.Size()).
 			WithContext("cache_hit_ratio", s.cache.GetCacheHitRatio()).
 			Info("Cache refresh completed")
@@ -70,18 +66,17 @@ func (s *MCPServer) cacheRefreshCoordinator(ctx context.Context) {
 		case <-s.shutdownChan:
 			return
 		case event := <-s.refreshChan:
-			// Add event to pending batch
 			pendingEvents[event.Path] = event
 
-			// Reset debounce timer
 			if debounceTimer != nil {
 				debounceTimer.Stop()
 			}
 
+			// 500ms debounce window balances responsiveness with batching efficiency
 			debounceTimer = time.AfterFunc(500*time.Millisecond, processPendingEvents)
 
 		case <-time.After(5 * time.Second):
-			// Periodic processing to ensure events don't get stuck
+			// Safety mechanism: process events even if debounce timer fails
 			if len(pendingEvents) > 0 {
 				if debounceTimer != nil {
 					debounceTimer.Stop()
@@ -98,53 +93,57 @@ func (s *MCPServer) processFileEventForCache(event models.FileEvent) {
 	defer s.mu.Unlock()
 
 	eventStart := time.Now()
+	defer func() {
+		s.loggingManager.LogFileSystemEvent(event.Type, event.Path, time.Since(eventStart))
+	}()
 
 	switch event.Type {
 	case "create", "modify":
-		// Parse the file and update cache
-		metadata, err := s.scanner.ParseMarkdownFile(event.Path)
-		if err != nil {
-			s.logger.WithError(err).
-				WithContext("file_path", event.Path).
-				WithContext("event_type", event.Type).
-				Error("Error parsing updated file")
-			s.degradationManager.RecordError(errors.ComponentDocumentParsing, err)
-			return
-		}
-
-		// Load document content into cache
-		if err := s.loadDocumentIntoCache(*metadata); err != nil {
-			s.logger.WithError(err).
-				WithContext("file_path", event.Path).
-				WithContext("event_type", event.Type).
-				Error("Error loading updated document")
-			s.degradationManager.RecordError(errors.ComponentCacheRefresh, err)
-			return
-		}
-
-		// Update category index
-		s.updateCategoryIndex(metadata.Category)
-
-		s.logger.WithContext("file_path", event.Path).
-			WithContext("event_type", event.Type).
-			WithContext("category", metadata.Category).
-			Info("Updated cache for file")
-
+		s.handleCreateOrModifyEvent(event)
 	case "delete":
-		// Remove from cache
-		s.cache.Invalidate(event.Path)
+		s.handleDeleteEvent(event)
+	}
+}
 
-		// Update category indexes - we need to determine category from path
-		category := s.getCategoryFromPath(event.Path)
-		s.updateCategoryIndex(category)
-
-		s.logger.WithContext("file_path", event.Path).
-			WithContext("category", category).
-			Info("Removed deleted file from cache")
+// handleCreateOrModifyEvent processes file creation or modification events
+func (s *MCPServer) handleCreateOrModifyEvent(event models.FileEvent) {
+	metadata, err := s.scanner.ParseMarkdownFile(event.Path)
+	if err != nil {
+		s.logger.WithError(err).
+			WithContext("file_path", event.Path).
+			WithContext("event_type", event.Type).
+			Error("Error parsing updated file")
+		s.degradationManager.RecordError(errors.ComponentDocumentParsing, err)
+		return
 	}
 
-	// Log file system event processing time
-	s.loggingManager.LogFileSystemEvent(event.Type, event.Path, time.Since(eventStart))
+	if err := s.loadDocumentIntoCache(*metadata); err != nil {
+		s.logger.WithError(err).
+			WithContext("file_path", event.Path).
+			WithContext("event_type", event.Type).
+			Error("Error loading updated document")
+		s.degradationManager.RecordError(errors.ComponentCacheRefresh, err)
+		return
+	}
+
+	s.updateCategoryIndex(metadata.Category)
+
+	s.logger.WithContext("file_path", event.Path).
+		WithContext("event_type", event.Type).
+		WithContext("category", metadata.Category).
+		Info("Updated cache for file")
+}
+
+// handleDeleteEvent processes file deletion events
+func (s *MCPServer) handleDeleteEvent(event models.FileEvent) {
+	s.cache.Invalidate(event.Path)
+
+	category := s.getCategoryFromPath(event.Path)
+	s.updateCategoryIndex(category)
+
+	s.logger.WithContext("file_path", event.Path).
+		WithContext("category", category).
+		Info("Removed deleted file from cache")
 }
 
 // updateCategoryIndex rebuilds the index for a specific category
@@ -172,14 +171,14 @@ func (s *MCPServer) updateCategoryIndex(category string) {
 func (s *MCPServer) getCategoryFromPath(path string) string {
 	normalizedPath := filepath.ToSlash(strings.ToLower(path))
 
-	if strings.Contains(normalizedPath, "guidelines") {
-		return "guideline"
+	if strings.Contains(normalizedPath, config.URIGuidelines) {
+		return config.CategoryGuideline
 	}
-	if strings.Contains(normalizedPath, "patterns") {
-		return "pattern"
+	if strings.Contains(normalizedPath, config.URIPatterns) {
+		return config.CategoryPattern
 	}
-	if strings.Contains(normalizedPath, "adr") {
-		return "adr"
+	if strings.Contains(normalizedPath, config.URIADR) {
+		return config.CategoryADR
 	}
-	return "unknown"
+	return config.CategoryUnknown
 }

@@ -19,3 +19,19 @@ const (
 	CategoryADR       = "adr"
 	CategoryUnknown   = "unknown"
 )
+
+// URI scheme and format constants
+const (
+	URIScheme      = "architecture://"
+	URIGuidelines  = "guidelines"
+	URIPatterns    = "patterns"
+	URIADR         = "adr"
+	URIUnknown     = "unknown"
+	URIFormatError = "Invalid URI format, expected 'architecture://{category}/{path}'"
+)
+
+// File extension constants
+const (
+	MimeTypeMarkdown  = "text/markdown"
+	MarkdownExtension = ".md"
+)
