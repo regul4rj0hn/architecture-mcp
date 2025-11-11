@@ -84,28 +84,28 @@
     - Update any hardcoded prompts/ references to mcp/prompts/
     - _Requirements: 3.1, 3.2_
 
-- [ ] 7. Split large test files by functional area
-  - [ ] 7.1 Create internal/server/server_lifecycle_test.go
+- [x] 7. Split large test files by functional area
+  - [x] 7.1 Create internal/server/server_lifecycle_test.go
     - Move Start, Shutdown, and initialization tests from server_test.go
     - Include graceful shutdown and signal handling tests
     - _Requirements: 7.3, 8.3_
   
-  - [ ] 7.2 Create internal/server/server_handlers_test.go
+  - [x] 7.2 Create internal/server/server_handlers_test.go
     - Move protocol handler tests (initialize, resources, prompts) from server_test.go
     - Include error handling and validation tests for handlers
     - _Requirements: 7.3, 8.3_
   
-  - [ ] 7.3 Create internal/server/server_resources_test.go
+  - [x] 7.3 Create internal/server/server_resources_test.go
     - Move resource-specific tests (list, read, URI resolution) from server_test.go
     - Include cache interaction tests
     - _Requirements: 7.3, 8.3_
   
-  - [ ] 7.4 Create internal/server/server_prompts_test.go
+  - [x] 7.4 Create internal/server/server_prompts_test.go
     - Move prompt-specific tests (list, get, rendering) from server_test.go
     - Include prompt validation and error tests
     - _Requirements: 7.3, 8.3_
   
-  - [ ] 7.5 Remove original server_test.go
+  - [x] 7.5 Remove original server_test.go
     - Verify all tests have been moved to new files
     - Delete original server_test.go file
     - Run full test suite to ensure nothing was missed

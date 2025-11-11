@@ -305,17 +305,21 @@ Some content here.`,
 func TestValidateAndExtractMetadata(t *testing.T) {
 	validator := NewDocumentValidator()
 
-	// Create a temporary test file in current directory
-	testFile := config.GuidelinesPath + "/test.md"
+	// Create a temporary test file in the proper structure
+	testFile := config.GuidelinesPath + "/test-validation.md"
 
-	// Create directory structure
+	// Create directory structure if it doesn't exist
 	err := os.MkdirAll(config.GuidelinesPath, 0755)
 	if err != nil {
 		t.Fatalf("failed to create test directory: %v", err)
 	}
 
-	// Clean up after test
-	defer os.RemoveAll("docs")
+	// Clean up after test - remove the test file and directory structure
+	// Use "mcp" as the base to remove the entire test directory tree
+	defer func() {
+		os.Remove(testFile)
+		os.RemoveAll("mcp")
+	}()
 
 	// Write test content
 	testContent := `# Test Document
