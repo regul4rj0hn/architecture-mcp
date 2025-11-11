@@ -1,8 +1,8 @@
 # MCP Architecture Service
 
-[![CI](https://github.com/Teladoc/service-architecture-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Teladoc/service-architecture-mcp/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/Teladoc/service-architecture-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/Teladoc/service-architecture-mcp)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Teladoc/service-architecture-mcp)](https://goreportcard.com/report/github.com/Teladoc/service-architecture-mcp)
+[![CI](https://github.com/regul4rj0hn/architecture-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/regul4rj0hn/architecture-mcp/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/regul4rj0hn/architecture-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/regul4rj0hn/architecture-mcp)
+[![Go Report Card](https://goreportcard.com/badge/github.com/regul4rj0hn/architecture-mcp)](https://goreportcard.com/report/github.com/regul4rj0hn/architecture-mcp)
 
 A Model Context Protocol (MCP) server that provides structured access to architectural guidelines, patterns, and Architecture Decision Records (ADRs) through JSON-RPC communication.
 
