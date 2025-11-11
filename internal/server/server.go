@@ -85,7 +85,7 @@ func NewMCPServer() *MCPServer {
 	}
 
 	// Initialize prompt manager
-	promptManager := prompts.NewPromptManager("prompts", docCache, fileMonitor)
+	promptManager := prompts.NewPromptManager(PromptsBasePath, docCache, fileMonitor)
 
 	server := &MCPServer{
 		serverInfo: models.MCPServerInfo{
@@ -557,9 +557,9 @@ func (s *MCPServer) onDegradationStateChange(component errors.ServiceComponent, 
 func (s *MCPServer) initializeDocumentationSystem(ctx context.Context) error {
 	// Define documentation directories to scan
 	docDirs := []string{
-		"docs/guidelines",
-		"docs/patterns",
-		"docs/adr",
+		GuidelinesPath,
+		PatternsPath,
+		ADRPath,
 	}
 
 	// Populate initial cache using concurrent scanner
@@ -1010,13 +1010,13 @@ func (s *MCPServer) generateResourceURI(category, path string) string {
 	// Remove category prefix from path if present
 	switch category {
 	case "guideline":
-		cleanPath = strings.TrimPrefix(cleanPath, "docs/guidelines/")
+		cleanPath = strings.TrimPrefix(cleanPath, GuidelinesPath+"/")
 		return fmt.Sprintf("architecture://guidelines/%s", cleanPath)
 	case "pattern":
-		cleanPath = strings.TrimPrefix(cleanPath, "docs/patterns/")
+		cleanPath = strings.TrimPrefix(cleanPath, PatternsPath+"/")
 		return fmt.Sprintf("architecture://patterns/%s", cleanPath)
 	case "adr":
-		cleanPath = strings.TrimPrefix(cleanPath, "docs/adr/")
+		cleanPath = strings.TrimPrefix(cleanPath, ADRPath+"/")
 		// For ADRs, extract ADR ID from filename if possible
 		adrId := s.extractADRId(cleanPath)
 		return fmt.Sprintf("architecture://adr/%s", adrId)
@@ -1162,11 +1162,9 @@ func (s *MCPServer) generatePossibleFilePaths(category, resourcePath string) []s
 
 	switch category {
 	case "guideline":
-		paths = append(paths, filepath.Join("docs/guidelines", resourcePath))
-		paths = append(paths, filepath.Join("docs", "guidelines", resourcePath))
+		paths = append(paths, filepath.Join(GuidelinesPath, resourcePath))
 	case "pattern":
-		paths = append(paths, filepath.Join("docs/patterns", resourcePath))
-		paths = append(paths, filepath.Join("docs", "patterns", resourcePath))
+		paths = append(paths, filepath.Join(PatternsPath, resourcePath))
 	case "adr":
 		// For ADRs, try different naming patterns
 		adrId := strings.TrimSuffix(resourcePath, ".md")
@@ -1180,8 +1178,7 @@ func (s *MCPServer) generatePossibleFilePaths(category, resourcePath string) []s
 		}
 
 		for _, pattern := range patterns {
-			paths = append(paths, filepath.Join("docs/adr", pattern))
-			paths = append(paths, filepath.Join("docs", "adr", pattern))
+			paths = append(paths, filepath.Join(ADRPath, pattern))
 		}
 
 		// Also try to find by ADR ID in existing documents

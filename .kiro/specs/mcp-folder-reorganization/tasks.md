@@ -6,32 +6,32 @@
   - Define category constants: categoryGuideline, categoryPattern, categoryADR, categoryUnknown
   - _Requirements: 1.1, 1.4, 2.1, 6.6_
 
-- [ ] 2. Update server initialization to use new paths
-  - [ ] 2.1 Update initializeDocumentationSystem in server.go
+- [-] 2. Update server initialization to use new paths
+  - [x] 2.1 Update initializeDocumentationSystem in server.go
     - Replace hardcoded "docs/guidelines", "docs/patterns", "docs/adr" with constants from config.go
     - Update docDirs slice to use GuidelinesPath, PatternsPath, ADRPath constants
     - _Requirements: 1.1, 1.4, 6.6_
   
-  - [ ] 2.2 Update prompt manager initialization
+  - [x] 2.2 Update prompt manager initialization
     - Update NewPromptManager call to use PromptsBasePath constant instead of "prompts"
     - _Requirements: 2.1, 6.6_
   
-  - [ ] 2.3 Update file system monitoring setup
+  - [x] 2.3 Update file system monitoring setup
     - Ensure monitor watches mcp/resources/ and mcp/prompts/ directories
     - _Requirements: 1.3, 2.2_
 
-- [ ] 3. Update path resolution in server handlers
-  - [ ] 3.1 Update buildURIFromPath function
+- [x] 3. Update path resolution in server handlers
+  - [x] 3.1 Update buildURIFromPath function
     - Replace "docs/guidelines/", "docs/patterns/", "docs/adr/" prefix trimming with new paths
     - Use constants from config.go for path operations
     - _Requirements: 1.2, 6.6_
   
-  - [ ] 3.2 Update resolveResourcePath function
+  - [x] 3.2 Update resolveResourcePath function
     - Replace "docs/guidelines", "docs/patterns", "docs/adr" path construction with new paths
     - Use constants from config.go for path building
     - _Requirements: 1.2, 6.6_
 
-- [ ] 4. Update scanner package for new paths
+- [x] 4. Update scanner package for new paths
   - Update getCategoryFromPath to be path-agnostic (already uses subdirectory names)
   - Verify scanner works correctly with mcp/resources/ base path
   - _Requirements: 1.1, 6.8_
