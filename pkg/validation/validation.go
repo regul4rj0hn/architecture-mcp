@@ -13,6 +13,7 @@ import (
 	"github.com/yuin/goldmark/text"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/config"
 )
 
 // DocumentValidator provides validation utilities for documents
@@ -257,14 +258,14 @@ func ValidateResourceURI(uri string) (string, error) {
 func DetermineCategoryFromPath(path string) (string, error) {
 	cleanPath := filepath.Clean(path)
 
-	if strings.HasPrefix(cleanPath, "docs/guidelines/") {
-		return "guideline", nil
+	if strings.HasPrefix(cleanPath, config.GuidelinesPath+"/") {
+		return config.CategoryGuideline, nil
 	}
-	if strings.HasPrefix(cleanPath, "docs/patterns/") {
-		return "pattern", nil
+	if strings.HasPrefix(cleanPath, config.PatternsPath+"/") {
+		return config.CategoryPattern, nil
 	}
-	if strings.HasPrefix(cleanPath, "docs/adr/") {
-		return "adr", nil
+	if strings.HasPrefix(cleanPath, config.ADRPath+"/") {
+		return config.CategoryADR, nil
 	}
 
 	return "", fmt.Errorf("unable to determine category from path: %s", path)

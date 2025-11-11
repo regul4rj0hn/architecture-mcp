@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"mcp-architecture-service/pkg/config"
 	"os"
 	"testing"
 )
@@ -14,13 +15,13 @@ func TestSanitizePath(t *testing.T) {
 	}{
 		{
 			name:        "valid relative path",
-			input:       "docs/guidelines/api-design.md",
-			expected:    "docs/guidelines/api-design.md",
+			input:       config.GuidelinesPath + "/api-design.md",
+			expected:    config.GuidelinesPath + "/api-design.md",
 			expectError: false,
 		},
 		{
 			name:        "path with dots",
-			input:       "docs/../guidelines/api-design.md",
+			input:       config.ResourcesBasePath + "/../guidelines/api-design.md",
 			expected:    "",
 			expectError: true,
 		},
@@ -38,13 +39,13 @@ func TestSanitizePath(t *testing.T) {
 		},
 		{
 			name:        "path with null bytes",
-			input:       "docs/test\x00.md",
+			input:       config.ResourcesBasePath + "/test\x00.md",
 			expected:    "",
 			expectError: true,
 		},
 		{
 			name:        "path with invalid characters",
-			input:       "docs/test<script>.md",
+			input:       config.ResourcesBasePath + "/test<script>.md",
 			expected:    "",
 			expectError: true,
 		},
@@ -144,20 +145,20 @@ func TestDetermineCategoryFromPath(t *testing.T) {
 	}{
 		{
 			name:        "guidelines path",
-			input:       "docs/guidelines/api-design.md",
-			expected:    "guideline",
+			input:       config.GuidelinesPath + "/api-design.md",
+			expected:    config.CategoryGuideline,
 			expectError: false,
 		},
 		{
 			name:        "patterns path",
-			input:       "docs/patterns/microservices.md",
-			expected:    "pattern",
+			input:       config.PatternsPath + "/microservices.md",
+			expected:    config.CategoryPattern,
 			expectError: false,
 		},
 		{
 			name:        "ADR path",
-			input:       "docs/adr/001-use-microservices.md",
-			expected:    "adr",
+			input:       config.ADRPath + "/001-use-microservices.md",
+			expected:    config.CategoryADR,
 			expectError: false,
 		},
 		{
@@ -305,10 +306,10 @@ func TestValidateAndExtractMetadata(t *testing.T) {
 	validator := NewDocumentValidator()
 
 	// Create a temporary test file in current directory
-	testFile := "docs/guidelines/test.md"
+	testFile := config.GuidelinesPath + "/test.md"
 
 	// Create directory structure
-	err := os.MkdirAll("docs/guidelines", 0755)
+	err := os.MkdirAll(config.GuidelinesPath, 0755)
 	if err != nil {
 		t.Fatalf("failed to create test directory: %v", err)
 	}
@@ -340,8 +341,8 @@ Some content here.`
 		t.Errorf("expected title 'Test Document', got %q", metadata.Title)
 	}
 
-	if metadata.Category != "guideline" {
-		t.Errorf("expected category 'guideline', got %q", metadata.Category)
+	if metadata.Category != config.CategoryGuideline {
+		t.Errorf("expected category %q, got %q", config.CategoryGuideline, metadata.Category)
 	}
 
 	if metadata.Size == 0 {

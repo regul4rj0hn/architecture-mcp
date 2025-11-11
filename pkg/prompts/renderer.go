@@ -8,6 +8,7 @@ import (
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/cache"
+	"mcp-architecture-service/pkg/config"
 )
 
 const (
@@ -224,7 +225,20 @@ func (tr *TemplateRenderer) wildcardMatch(docPath, resourcePath string) bool {
 
 // exactMatch performs exact path matching
 func (tr *TemplateRenderer) exactMatch(docPath, resourcePath, category string) bool {
-	expectedPath := filepath.Join("docs", category, resourcePath)
+	// Map category to the appropriate path constant
+	var basePath string
+	switch category {
+	case config.CategoryGuideline:
+		basePath = config.GuidelinesPath
+	case config.CategoryPattern:
+		basePath = config.PatternsPath
+	case config.CategoryADR:
+		basePath = config.ADRPath
+	default:
+		basePath = filepath.Join(config.ResourcesBasePath, category)
+	}
+
+	expectedPath := filepath.Join(basePath, resourcePath)
 	if !strings.HasSuffix(expectedPath, ".md") {
 		expectedPath += ".md"
 	}

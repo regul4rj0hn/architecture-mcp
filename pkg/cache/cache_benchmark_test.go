@@ -277,7 +277,7 @@ func BenchmarkCacheStats(b *testing.B) {
 
 	// Generate some hits and misses
 	for i := 0; i < 100; i++ {
-		cache.Get(fmt.Sprintf("docs/guidelines/test-%d.md", i))
+		cache.Get(fmt.Sprintf("/mcp/resources/guidelines/test-%d.md", i))
 		cache.Get(fmt.Sprintf("nonexistent-%d", i))
 	}
 
@@ -323,7 +323,7 @@ func BenchmarkCacheConcurrentMixedOperations(b *testing.B) {
 			operation := i % 4
 			switch operation {
 			case 0: // Get operation (50% of operations)
-				key := fmt.Sprintf("docs/guidelines/test-%d.md", i%initialSize)
+				key := fmt.Sprintf("/mcp/resources/guidelines/test-%d.md", i%initialSize)
 				cache.Get(key)
 			case 1: // Set operation (25% of operations)
 				doc := createTestDocument(i+initialSize, fmt.Sprintf("New content %d", i))
@@ -356,7 +356,7 @@ func BenchmarkCacheScalability(b *testing.B) {
 			// Benchmark get operations at this scale
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				key := fmt.Sprintf("docs/guidelines/test-%d.md", i%scale)
+				key := fmt.Sprintf("/mcp/resources/guidelines/test-%d.md", i%scale)
 				cache.Get(key)
 			}
 		})
@@ -397,7 +397,7 @@ func LoadTestCacheHighConcurrency(b *testing.B) {
 						op := j % 10
 						if op < 7 {
 							// Read operation
-							key := fmt.Sprintf("docs/guidelines/test-%d.md", j%cacheSize)
+							key := fmt.Sprintf("/mcp/resources/guidelines/test-%d.md", j%cacheSize)
 							cache.Get(key)
 						} else if op < 9 {
 							// Write operation
@@ -468,7 +468,7 @@ func BenchmarkCacheMemoryEfficiency(b *testing.B) {
 					// Mix of operations
 					switch j % 5 {
 					case 0, 1, 2: // 60% reads
-						key := fmt.Sprintf("docs/guidelines/test-%d.md", j%tc.docCount)
+						key := fmt.Sprintf("/mcp/resources/guidelines/test-%d.md", j%tc.docCount)
 						cache.Get(key)
 					case 3: // 20% category queries
 						cache.GetByCategory("guideline")
@@ -500,7 +500,7 @@ func createTestDocument(id int, content string) *models.Document {
 		Metadata: models.DocumentMetadata{
 			Title:        fmt.Sprintf("Test Document %d", id),
 			Category:     "guideline",
-			Path:         fmt.Sprintf("docs/guidelines/test-%d.md", id),
+			Path:         fmt.Sprintf("/mcp/resources/guidelines/test-%d.md", id),
 			LastModified: time.Now(),
 			Size:         int64(len(content)),
 			Checksum:     fmt.Sprintf("checksum-%d", id),
@@ -517,7 +517,7 @@ func createTestDocumentWithCategory(id int, category, content string) *models.Do
 		Metadata: models.DocumentMetadata{
 			Title:        fmt.Sprintf("Test %s %d", category, id),
 			Category:     category,
-			Path:         fmt.Sprintf("docs/%ss/test-%d.md", category, id),
+			Path:         fmt.Sprintf("/mcp/resources/%ss/test-%d.md", category, id),
 			LastModified: time.Now(),
 			Size:         int64(len(content)),
 			Checksum:     fmt.Sprintf("checksum-%s-%d", category, id),

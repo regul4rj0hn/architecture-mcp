@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 )
 
@@ -206,7 +207,7 @@ func TestSpecializedLoggingMethods(t *testing.T) {
 		details := map[string]interface{}{
 			"processing_time_ms": 25,
 		}
-		testLogger.LogFileSystemEvent("modify", "/docs/test.md", details)
+		testLogger.LogFileSystemEvent("modify", config.ResourcesBasePath+"/test.md", details)
 
 		var logEntry map[string]interface{}
 		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
@@ -216,8 +217,8 @@ func TestSpecializedLoggingMethods(t *testing.T) {
 		if logEntry["fs_event_type"] != "modify" {
 			t.Errorf("Expected fs_event_type 'modify', got %v", logEntry["fs_event_type"])
 		}
-		if logEntry["fs_path"] != "/docs/test.md" {
-			t.Errorf("Expected fs_path '/docs/test.md', got %v", logEntry["fs_path"])
+		if logEntry["fs_path"] != config.ResourcesBasePath+"/test.md" {
+			t.Errorf("Expected fs_path '/mcp/resources/test.md', got %v", logEntry["fs_path"])
 		}
 	})
 }
@@ -257,17 +258,17 @@ func TestDataSanitization(t *testing.T) {
 		}
 	})
 
-	t.Run("sanitizeFilePath preserves docs paths", func(t *testing.T) {
-		path := "/home/user/project/docs/guidelines/api.md"
+	t.Run("sanitizeFilePath preserves mcp/resources paths", func(t *testing.T) {
+		path := "/home/user/project/mcp/resources/guidelines/api.md"
 		result := sanitizeFilePath(path)
 
-		expected := "docs/guidelines/api.md"
+		expected := config.ResourcesBasePath + "/guidelines/api.md"
 		if result != expected {
 			t.Errorf("Expected %s, got %s", expected, result)
 		}
 	})
 
-	t.Run("sanitizeFilePath returns filename for non-docs paths", func(t *testing.T) {
+	t.Run("sanitizeFilePath returns filename for non-mcp paths", func(t *testing.T) {
 		path := "/etc/passwd"
 		result := sanitizeFilePath(path)
 

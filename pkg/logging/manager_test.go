@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 )
 
@@ -191,11 +192,11 @@ func TestLoggingManagerSpecializedMethods(t *testing.T) {
 		manager := NewLoggingManager()
 
 		// Scan with no errors
-		manager.LogDocumentScan("/docs/guidelines", 5, []string{}, 300*time.Millisecond)
+		manager.LogDocumentScan(config.GuidelinesPath, 5, []string{}, 300*time.Millisecond)
 
 		// Scan with errors
 		scanErrors := []string{"Error parsing doc1.md", "Error parsing doc2.md"}
-		manager.LogDocumentScan("/docs/patterns", 3, scanErrors, 250*time.Millisecond)
+		manager.LogDocumentScan(config.PatternsPath, 3, scanErrors, 250*time.Millisecond)
 
 		stats := manager.GetStats()
 		if stats.MessagesByLogger["scanner"] != 2 {

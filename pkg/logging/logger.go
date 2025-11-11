@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 )
 
@@ -314,11 +315,12 @@ func isAlphanumeric(s string) bool {
 
 // sanitizeFilePath sanitizes file paths to prevent information disclosure
 func sanitizeFilePath(path string) string {
-	// Only show relative paths within the docs directory
-	if strings.Contains(path, "docs/") {
-		parts := strings.Split(path, "docs/")
+	// Only show relative paths within the mcp/resources directory
+	resourcesPath := config.ResourcesBasePath + "/"
+	if strings.Contains(path, resourcesPath) {
+		parts := strings.Split(path, resourcesPath)
 		if len(parts) > 1 {
-			return "docs/" + parts[len(parts)-1]
+			return resourcesPath + parts[len(parts)-1]
 		}
 	}
 

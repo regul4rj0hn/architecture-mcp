@@ -15,6 +15,7 @@ import (
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/internal/server"
+	"mcp-architecture-service/pkg/config"
 )
 
 // LoadTestConfig defines configuration for load testing
@@ -359,9 +360,9 @@ func createLoadTestDocuments(tb testing.TB, baseDir string, count, size int) {
 		name string
 		dir  string
 	}{
-		{"guideline", "docs/guidelines"},
-		{"pattern", "docs/patterns"},
-		{"adr", "docs/adr"},
+		{config.CategoryGuideline, config.GuidelinesPath},
+		{config.CategoryPattern, config.PatternsPath},
+		{config.CategoryADR, config.ADRPath},
 	}
 
 	// Create directories

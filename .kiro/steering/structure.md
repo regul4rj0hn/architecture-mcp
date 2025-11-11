@@ -13,6 +13,7 @@ internal/server/    # MCP message handling logic
   ├── server.go     # Core server struct and lifecycle
   ├── handlers.go   # MCP protocol handlers
   └── initialization.go  # System initialization
+pkg/config/         # MCP asset constant path
 pkg/cache/          # Thread-safe in-memory cache
 pkg/monitor/        # File system watcher (fsnotify)
 pkg/scanner/        # Documentation parser

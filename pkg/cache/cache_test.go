@@ -33,7 +33,7 @@ func TestDocumentCache_SetAndGet(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:        "Test Document",
 			Category:     "guideline",
-			Path:         "/docs/guidelines/test.md",
+			Path:         "/mcp/resources/guidelines/test.md",
 			LastModified: time.Now(),
 			Size:         100,
 			Checksum:     "abc123",
@@ -88,21 +88,21 @@ func TestDocumentCache_GetByCategory(t *testing.T) {
 			Metadata: models.DocumentMetadata{
 				Title:    "Guideline 1",
 				Category: "guideline",
-				Path:     "/docs/guidelines/guide1.md",
+				Path:     "/mcp/resources/guidelines/guide1.md",
 			},
 		},
 		{
 			Metadata: models.DocumentMetadata{
 				Title:    "Guideline 2",
 				Category: "guideline",
-				Path:     "/docs/guidelines/guide2.md",
+				Path:     "/mcp/resources/guidelines/guide2.md",
 			},
 		},
 		{
 			Metadata: models.DocumentMetadata{
 				Title:    "Pattern 1",
 				Category: "pattern",
-				Path:     "/docs/patterns/pattern1.md",
+				Path:     "/mcp/resources/patterns/pattern1.md",
 			},
 		},
 	}
@@ -136,7 +136,7 @@ func TestDocumentCache_Invalidate(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:    "Test Document",
 			Category: "guideline",
-			Path:     "/docs/guidelines/test.md",
+			Path:     "/mcp/resources/guidelines/test.md",
 		},
 	}
 
@@ -171,21 +171,21 @@ func TestDocumentCache_InvalidateByCategory(t *testing.T) {
 			Metadata: models.DocumentMetadata{
 				Title:    "Guideline 1",
 				Category: "guideline",
-				Path:     "/docs/guidelines/guide1.md",
+				Path:     "/mcp/resources/guidelines/guide1.md",
 			},
 		},
 		{
 			Metadata: models.DocumentMetadata{
 				Title:    "Guideline 2",
 				Category: "guideline",
-				Path:     "/docs/guidelines/guide2.md",
+				Path:     "/mcp/resources/guidelines/guide2.md",
 			},
 		},
 		{
 			Metadata: models.DocumentMetadata{
 				Title:    "Pattern 1",
 				Category: "pattern",
-				Path:     "/docs/patterns/pattern1.md",
+				Path:     "/mcp/resources/patterns/pattern1.md",
 			},
 		},
 	}
@@ -217,9 +217,9 @@ func TestDocumentCache_InvalidateByPaths(t *testing.T) {
 
 	// Add test documents
 	paths := []string{
-		"/docs/guidelines/guide1.md",
-		"/docs/guidelines/guide2.md",
-		"/docs/patterns/pattern1.md",
+		"/mcp/resources/guidelines/guide1.md",
+		"/mcp/resources/guidelines/guide2.md",
+		"/mcp/resources/patterns/pattern1.md",
 	}
 
 	for _, path := range paths {
@@ -234,8 +234,8 @@ func TestDocumentCache_InvalidateByPaths(t *testing.T) {
 
 	// Invalidate specific paths
 	pathsToInvalidate := []string{
-		"/docs/guidelines/guide1.md",
-		"/docs/patterns/pattern1.md",
+		"/mcp/resources/guidelines/guide1.md",
+		"/mcp/resources/patterns/pattern1.md",
 		"/nonexistent/path.md", // Should not cause error
 	}
 
@@ -245,17 +245,17 @@ func TestDocumentCache_InvalidateByPaths(t *testing.T) {
 	}
 
 	// Verify correct documents were invalidated
-	_, err := cache.Get("/docs/guidelines/guide1.md")
+	_, err := cache.Get("/mcp/resources/guidelines/guide1.md")
 	if err == nil {
 		t.Error("guide1.md should be invalidated")
 	}
 
-	_, err = cache.Get("/docs/patterns/pattern1.md")
+	_, err = cache.Get("/mcp/resources/patterns/pattern1.md")
 	if err == nil {
 		t.Error("pattern1.md should be invalidated")
 	}
 
-	_, err = cache.Get("/docs/guidelines/guide2.md")
+	_, err = cache.Get("/mcp/resources/guidelines/guide2.md")
 	if err != nil {
 		t.Error("guide2.md should still exist")
 	}
@@ -268,7 +268,7 @@ func TestDocumentCache_Clear(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		doc := &models.Document{
 			Metadata: models.DocumentMetadata{
-				Path:     fmt.Sprintf("/docs/test%d.md", i),
+				Path:     fmt.Sprintf("/mcp/resources/test%d.md", i),
 				Category: "guideline",
 			},
 		}
@@ -296,7 +296,7 @@ func TestDocumentCache_Stats(t *testing.T) {
 
 	doc := &models.Document{
 		Metadata: models.DocumentMetadata{
-			Path:     "/docs/test.md",
+			Path:     "/mcp/resources/test.md",
 			Category: "guideline",
 		},
 		Content: models.DocumentContent{
@@ -335,7 +335,7 @@ func TestDocumentCache_GetCategories(t *testing.T) {
 	for i, category := range categories {
 		doc := &models.Document{
 			Metadata: models.DocumentMetadata{
-				Path:     fmt.Sprintf("/docs/%s/test%d.md", category, i),
+				Path:     fmt.Sprintf("/mcp/resources/%s/test%d.md", category, i),
 				Category: category,
 			},
 		}
@@ -366,7 +366,7 @@ func TestDocumentCache_Cleanup(t *testing.T) {
 	// Add a document
 	doc := &models.Document{
 		Metadata: models.DocumentMetadata{
-			Path:     "/docs/test.md",
+			Path:     "/mcp/resources/test.md",
 			Category: "guideline",
 		},
 	}
@@ -402,12 +402,12 @@ func TestDocumentCache_IndexOperations(t *testing.T) {
 			{
 				Title:    "Test Guideline 1",
 				Category: "guideline",
-				Path:     "/docs/guidelines/test1.md",
+				Path:     "/mcp/resources/guidelines/test1.md",
 			},
 			{
 				Title:    "Test Guideline 2",
 				Category: "guideline",
-				Path:     "/docs/guidelines/test2.md",
+				Path:     "/mcp/resources/guidelines/test2.md",
 			},
 		},
 		Count: 2,
@@ -451,14 +451,14 @@ func TestDocumentCache_GetAllOperations(t *testing.T) {
 			Metadata: models.DocumentMetadata{
 				Title:    "Doc 1",
 				Category: "guideline",
-				Path:     "/docs/guidelines/doc1.md",
+				Path:     "/mcp/resources/guidelines/doc1.md",
 			},
 		},
 		{
 			Metadata: models.DocumentMetadata{
 				Title:    "Doc 2",
 				Category: "pattern",
-				Path:     "/docs/patterns/doc2.md",
+				Path:     "/mcp/resources/patterns/doc2.md",
 			},
 		},
 	}
@@ -523,7 +523,7 @@ func TestDocumentCache_ConcurrentAccess(t *testing.T) {
 					Metadata: models.DocumentMetadata{
 						Title:    fmt.Sprintf("Doc %d-%d", id, j),
 						Category: "guideline",
-						Path:     fmt.Sprintf("/docs/guidelines/doc-%d-%d.md", id, j),
+						Path:     fmt.Sprintf("/mcp/resources/guidelines/doc-%d-%d.md", id, j),
 					},
 					Content: models.DocumentContent{
 						RawContent: fmt.Sprintf("Content for doc %d-%d", id, j),
@@ -546,7 +546,7 @@ func TestDocumentCache_ConcurrentAccess(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < numOperations; j++ {
-				path := fmt.Sprintf("/docs/guidelines/doc-%d-%d.md", id, j)
+				path := fmt.Sprintf("/mcp/resources/guidelines/doc-%d-%d.md", id, j)
 				doc, err := cache.Get(path)
 				if err != nil {
 					t.Errorf("Failed to get document %s: %v", path, err)
@@ -566,7 +566,7 @@ func TestDocumentCache_ConcurrentAccess(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < numOperations/2; j++ {
-				path := fmt.Sprintf("/docs/guidelines/doc-%d-%d.md", id, j)
+				path := fmt.Sprintf("/mcp/resources/guidelines/doc-%d-%d.md", id, j)
 				cache.Invalidate(path)
 			}
 		}(i)
@@ -600,14 +600,14 @@ func TestDocumentCache_ConcurrentReadWrite(t *testing.T) {
 					Metadata: models.DocumentMetadata{
 						Title:    fmt.Sprintf("Writer %d Doc %d", id, j),
 						Category: "guideline",
-						Path:     fmt.Sprintf("/docs/guidelines/writer-%d-doc-%d.md", id, j),
+						Path:     fmt.Sprintf("/mcp/resources/guidelines/writer-%d-doc-%d.md", id, j),
 					},
 				}
 				cache.Set(doc.Metadata.Path, doc)
 
 				// Occasionally invalidate older documents
 				if j > 10 && j%10 == 0 {
-					oldPath := fmt.Sprintf("/docs/guidelines/writer-%d-doc-%d.md", id, j-10)
+					oldPath := fmt.Sprintf("/mcp/resources/guidelines/writer-%d-doc-%d.md", id, j-10)
 					cache.Invalidate(oldPath)
 				}
 			}
@@ -622,7 +622,7 @@ func TestDocumentCache_ConcurrentReadWrite(t *testing.T) {
 			for j := 0; j < numOperations; j++ {
 				// Try to read various documents
 				for writerID := 0; writerID < numWriters; writerID++ {
-					path := fmt.Sprintf("/docs/guidelines/writer-%d-doc-%d.md", writerID, j)
+					path := fmt.Sprintf("/mcp/resources/guidelines/writer-%d-doc-%d.md", writerID, j)
 					_, _ = cache.Get(path) // Ignore errors as documents may not exist yet
 				}
 
@@ -671,7 +671,7 @@ func TestDocumentCache_MemoryManagement(t *testing.T) {
 			Metadata: models.DocumentMetadata{
 				Title:    fmt.Sprintf("Doc %d", i),
 				Category: "guideline",
-				Path:     fmt.Sprintf("/docs/guidelines/doc%d.md", i),
+				Path:     fmt.Sprintf("/mcp/resources/guidelines/doc%d.md", i),
 			},
 			Content: models.DocumentContent{
 				RawContent: string(content),
@@ -728,7 +728,7 @@ func TestDocumentCache_LargeDataset(t *testing.T) {
 			Metadata: models.DocumentMetadata{
 				Title:    fmt.Sprintf("Large Doc %d", i),
 				Category: fmt.Sprintf("category%d", i%5), // 5 different categories
-				Path:     fmt.Sprintf("/docs/large/doc%d.md", i),
+				Path:     fmt.Sprintf("/mcp/resources/large/doc%d.md", i),
 			},
 			Content: models.DocumentContent{
 				RawContent: string(content),
@@ -745,7 +745,7 @@ func TestDocumentCache_LargeDataset(t *testing.T) {
 	// Test retrieval performance
 	start := time.Now()
 	for i := 0; i < 100; i++ {
-		path := fmt.Sprintf("/docs/large/doc%d.md", i)
+		path := fmt.Sprintf("/mcp/resources/large/doc%d.md", i)
 		_, err := cache.Get(path)
 		if err != nil {
 			t.Errorf("Failed to get document %s: %v", path, err)
@@ -776,7 +776,7 @@ func TestDocumentCache_LargeDataset(t *testing.T) {
 	// Test bulk invalidation
 	pathsToInvalidate := make([]string, 100)
 	for i := 0; i < 100; i++ {
-		pathsToInvalidate[i] = fmt.Sprintf("/docs/large/doc%d.md", i)
+		pathsToInvalidate[i] = fmt.Sprintf("/mcp/resources/large/doc%d.md", i)
 	}
 
 	invalidatedCount := cache.InvalidateByPaths(pathsToInvalidate)
@@ -885,7 +885,7 @@ func TestDocumentCache_StatsAccuracy(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:    "Stats Test Doc",
 			Category: "guideline",
-			Path:     "/docs/guidelines/stats.md",
+			Path:     "/mcp/resources/guidelines/stats.md",
 		},
 		Content: models.DocumentContent{
 			RawContent: "Test content for stats",
@@ -930,7 +930,7 @@ func TestDocumentCache_StatsAccuracy(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		testDoc := &models.Document{
 			Metadata: models.DocumentMetadata{
-				Path:     fmt.Sprintf("/docs/guidelines/test%d.md", i),
+				Path:     fmt.Sprintf("/mcp/resources/guidelines/test%d.md", i),
 				Category: "guideline",
 			},
 		}

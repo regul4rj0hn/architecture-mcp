@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"mcp-architecture-service/pkg/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,10 +27,10 @@ func TestGetCategoryFromPath(t *testing.T) {
 		path     string
 		expected string
 	}{
-		{"/docs/guidelines/api.md", "guideline"},
-		{"/docs/patterns/singleton.md", "pattern"},
-		{"/docs/adr/001-database.md", "adr"},
-		{"/docs/other/readme.md", "unknown"},
+		{"/mcp/resources/guidelines/api.md", "guideline"},
+		{"/mcp/resources/patterns/singleton.md", "pattern"},
+		{"/mcp/resources/adr/001-database.md", "adr"},
+		{"/mcp/resources/other/readme.md", "unknown"},
 		{"guidelines/test.md", "guideline"},
 		{"PATTERNS/Test.md", "pattern"}, // Test case insensitive
 		{"", "unknown"},
@@ -183,9 +184,9 @@ func TestScanDirectoryIntegration(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create test directories
-	guidelinesDir := filepath.Join(tempDir, "docs", "guidelines")
-	patternsDir := filepath.Join(tempDir, "docs", "patterns")
-	adrDir := filepath.Join(tempDir, "docs", "adr")
+	guidelinesDir := filepath.Join(tempDir, config.GuidelinesPath)
+	patternsDir := filepath.Join(tempDir, config.PatternsPath)
+	adrDir := filepath.Join(tempDir, config.ADRPath)
 
 	err = os.MkdirAll(guidelinesDir, 0755)
 	if err != nil {
