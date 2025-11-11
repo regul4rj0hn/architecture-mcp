@@ -7,7 +7,7 @@
   - Add performance metrics tracking to ToolManager
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 2. Add MCP protocol support for tools
+- [x] 2. Add MCP protocol support for tools
   - Define MCPTool, MCPToolsListResult, MCPToolsCallParams, MCPToolsCallResult types in `internal/models/tool.go`
   - Update MCPCapabilities to include Tools field in `internal/models/mcp.go`
   - Add MCPToolCapabilities struct with ListChanged field
