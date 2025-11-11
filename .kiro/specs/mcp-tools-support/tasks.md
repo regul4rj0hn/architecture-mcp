@@ -75,14 +75,14 @@
   - Test excerpt extraction
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 7. Implement CheckADRAlignmentTool
-- [ ] 7.1 Create check_adr_alignment.go with CheckADRAlignmentTool struct
+- [x] 7. Implement CheckADRAlignmentTool
+- [x] 7.1 Create check_adr_alignment.go with CheckADRAlignmentTool struct
   - Implement Tool interface methods
   - Add constructor NewCheckADRAlignmentTool(cache *cache.DocumentCache)
   - Define input schema with decision_description and decision_context fields
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 7.2 Implement ADR alignment analysis
+- [x] 7.2 Implement ADR alignment analysis
   - Extract keywords from decision description
   - Search ADR documents for related content
   - Analyze ADR status and decision text
@@ -92,7 +92,7 @@
   - Return structured alignment analysis
   - _Requirements: 3.1, 3.2, 3.3, 3.5_
 
-- [ ]* 7.3 Write unit tests for CheckADRAlignmentTool
+- [x] 7.3 Write unit tests for CheckADRAlignmentTool
   - Test alignment detection with supporting ADRs
   - Test conflict identification
   - Test related ADR discovery
