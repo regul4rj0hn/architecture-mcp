@@ -17,6 +17,7 @@ import (
 	"mcp-architecture-service/pkg/monitor"
 	"mcp-architecture-service/pkg/prompts"
 	"mcp-architecture-service/pkg/scanner"
+	"mcp-architecture-service/pkg/tools"
 )
 
 // MCPServer represents the main MCP server
@@ -32,6 +33,9 @@ type MCPServer struct {
 
 	// Prompts system
 	promptManager *prompts.PromptManager
+
+	// Tools system
+	toolManager *tools.ToolManager
 
 	// Error handling and degradation
 	circuitBreakerManager *errors.CircuitBreakerManager
@@ -106,6 +110,9 @@ func newMCPServerWithOptions(enableMonitor bool) *MCPServer {
 			Prompts: &models.MCPPromptCapabilities{
 				ListChanged: false,
 			},
+			Tools: &models.MCPToolCapabilities{
+				ListChanged: false,
+			},
 		},
 		initialized: false,
 
@@ -169,6 +176,18 @@ func (s *MCPServer) Start(ctx context.Context) error {
 	} else {
 		s.loggingManager.LogStartupSequence("prompts_init", map[string]interface{}{},
 			time.Since(promptInitStart), true)
+	}
+
+	// Initialize tools system
+	toolsInitStart := time.Now()
+	if err := s.initializeToolsSystem(); err != nil {
+		s.loggingManager.LogStartupSequence("tools_init", map[string]interface{}{
+			"error": err.Error(),
+		}, time.Since(toolsInitStart), false)
+		s.logger.WithError(err).Warn("Failed to initialize tools system")
+	} else {
+		s.loggingManager.LogStartupSequence("tools_init", map[string]interface{}{},
+			time.Since(toolsInitStart), true)
 	}
 
 	// Start cache refresh coordinator
@@ -282,6 +301,10 @@ func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage
 		response = s.handlePromptsList(message)
 	case "prompts/get":
 		response = s.handlePromptsGet(message)
+	case "tools/list":
+		response = s.handleToolsList(message)
+	case "tools/call":
+		response = s.handleToolsCall(message)
 	case "server/performance":
 		response = s.handlePerformanceMetrics(message)
 	default:

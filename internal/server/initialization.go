@@ -11,6 +11,8 @@ import (
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
+	"mcp-architecture-service/pkg/logging"
+	"mcp-architecture-service/pkg/tools"
 )
 
 // initializeDocumentationSystem sets up the documentation scanning and monitoring with concurrent processing
@@ -243,6 +245,22 @@ func (s *MCPServer) loadDocumentIntoCache(metadata models.DocumentMetadata) erro
 
 	// Store in cache
 	s.cache.Set(metadata.Path, doc)
+	return nil
+}
+
+// initializeToolsSystem sets up the tools system with registered tools
+func (s *MCPServer) initializeToolsSystem() error {
+	s.logger.Info("Initializing tools system")
+
+	// Create tool manager with logger
+	loggingManager := logging.NewLoggingManager()
+	toolLogger := loggingManager.GetLogger("tools")
+	s.toolManager = tools.NewToolManager(toolLogger)
+
+	// Register built-in tools would go here in future tasks
+	// For now, just initialize the manager
+
+	s.logger.Info("Tools system initialized successfully")
 	return nil
 }
 

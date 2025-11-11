@@ -13,14 +13,14 @@
   - Add MCPToolCapabilities struct with ListChanged field
   - _Requirements: 4.1, 4.2, 4.3_
 
-- [ ] 3. Implement tools protocol handlers
+- [x] 3. Implement tools protocol handlers
   - Add handleToolsList() method in `internal/server/handlers.go` to return available tools with schemas
   - Add handleToolsCall() method in `internal/server/handlers.go` to validate and execute tool invocations
   - Update handleMessage() switch statement to route tools/list and tools/call requests
   - Integrate with existing error handling patterns using createStructuredErrorResponse()
   - _Requirements: 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 4. Initialize tools system in server
+- [x] 4. Initialize tools system in server
   - Add toolManager field to MCPServer struct in `internal/server/server.go`
   - Create initializeToolsSystem() method in `internal/server/initialization.go`
   - Call initializeToolsSystem() during server Start() sequence

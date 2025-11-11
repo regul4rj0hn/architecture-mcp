@@ -294,3 +294,168 @@ func TestPromptsCapabilityInInitialize(t *testing.T) {
 		t.Error("Expected resources capability to be present in initialization response")
 	}
 }
+
+func TestToolsCapabilityInInitialize(t *testing.T) {
+	server := NewMCPServer()
+
+	initMessage := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-init-tools",
+		Method:  "initialize",
+		Params: models.MCPInitializeParams{
+			ProtocolVersion: "2024-11-05",
+			Capabilities:    map[string]interface{}{},
+			ClientInfo: models.MCPClientInfo{
+				Name:    "test-client",
+				Version: "1.0.0",
+			},
+		},
+	}
+
+	response := server.handleInitialize(initMessage)
+
+	if response == nil {
+		t.Fatal("handleInitialize() returned nil")
+	}
+
+	if response.Error != nil {
+		t.Errorf("Expected no error, got %v", response.Error)
+	}
+
+	// Verify result structure
+	result, ok := response.Result.(models.MCPInitializeResult)
+	if !ok {
+		t.Fatal("Expected result to be MCPInitializeResult")
+	}
+
+	// Verify tools capability is present
+	if result.Capabilities.Tools == nil {
+		t.Error("Expected tools capability to be present in initialization response")
+	}
+
+	// Verify tools capability has correct structure
+	if result.Capabilities.Tools.ListChanged {
+		t.Error("Expected tools ListChanged to be false by default")
+	}
+
+	// Verify other capabilities are also present
+	if result.Capabilities.Resources == nil {
+		t.Error("Expected resources capability to be present in initialization response")
+	}
+
+	if result.Capabilities.Prompts == nil {
+		t.Error("Expected prompts capability to be present in initialization response")
+	}
+}
+
+func TestToolsSystemInitialization(t *testing.T) {
+	server := NewMCPServer()
+
+	// Verify toolManager is nil before initialization
+	if server.toolManager != nil {
+		t.Error("Expected toolManager to be nil before initialization")
+	}
+
+	// Initialize the tools system
+	err := server.initializeToolsSystem()
+
+	if err != nil {
+		t.Fatalf("Failed to initialize tools system: %v", err)
+	}
+
+	// Verify toolManager is now initialized
+	if server.toolManager == nil {
+		t.Fatal("Expected toolManager to be initialized")
+	}
+
+	// Verify we can list tools (should be empty initially)
+	tools := server.toolManager.ListTools()
+	if tools == nil {
+		t.Error("Expected tools list to be non-nil")
+	}
+
+	// Verify we can get performance metrics
+	metrics := server.toolManager.GetPerformanceMetrics()
+	if metrics == nil {
+		t.Error("Expected performance metrics to be non-nil")
+	}
+
+	// Verify metrics have expected structure
+	if _, ok := metrics["total_invocations"]; !ok {
+		t.Error("Expected total_invocations in metrics")
+	}
+
+	if _, ok := metrics["failed_invocations"]; !ok {
+		t.Error("Expected failed_invocations in metrics")
+	}
+}
+
+func TestPerformanceMetricsIncludesTools(t *testing.T) {
+	server := NewMCPServer()
+
+	// Initialize tools system
+	err := server.initializeToolsSystem()
+	if err != nil {
+		t.Fatalf("Failed to initialize tools system: %v", err)
+	}
+
+	// Create performance metrics request
+	metricsMessage := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-metrics",
+		Method:  "server/performance",
+	}
+
+	response := server.handlePerformanceMetrics(metricsMessage)
+
+	if response == nil {
+		t.Fatal("handlePerformanceMetrics() returned nil")
+	}
+
+	if response.Error != nil {
+		t.Errorf("Expected no error, got %v", response.Error)
+	}
+
+	// Verify result structure
+	result, ok := response.Result.(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected result to be a map")
+	}
+
+	// Verify tool_metrics is present
+	toolMetrics, ok := result["tool_metrics"]
+	if !ok {
+		t.Error("Expected tool_metrics to be present in performance metrics")
+	}
+
+	// Verify tool_metrics has expected structure
+	toolMetricsMap, ok := toolMetrics.(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected tool_metrics to be a map")
+	}
+
+	// Check for expected fields
+	expectedFields := []string{
+		"total_invocations",
+		"failed_invocations",
+		"invocations_by_name",
+		"total_execution_time_ms",
+		"execution_time_by_name",
+		"timeout_count",
+	}
+
+	for _, field := range expectedFields {
+		if _, ok := toolMetricsMap[field]; !ok {
+			t.Errorf("Expected field %s in tool_metrics", field)
+		}
+	}
+
+	// Verify other metrics are also present
+	if _, ok := result["cache_metrics"]; !ok {
+		t.Error("Expected cache_metrics to be present")
+	}
+
+	if _, ok := result["prompt_metrics"]; !ok {
+		t.Error("Expected prompt_metrics to be present")
+	}
+}
