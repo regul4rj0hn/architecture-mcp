@@ -1,0 +1,196 @@
+# Implementation Plan
+
+- [ ] 1. Add MIT LICENSE file
+  - Create LICENSE file in project root with MIT License text
+  - Include year 2025 and appropriate copyright holder
+  - _Requirements: 1.1, 1.2, 1.3_
+
+- [ ] 2. Refactor pkg/errors/circuit_breaker_test.go
+  - [ ] 2.1 Split TestCircuitBreaker into separate test functions
+    - Create TestCircuitBreakerInitialState for initial state verification
+    - Create TestCircuitBreakerOpensAfterFailures for failure threshold testing
+    - Create TestCircuitBreakerRejectsWhenOpen for open state rejection testing
+    - Create TestCircuitBreakerTransitionsToHalfOpen for timeout transition testing
+    - Create TestCircuitBreakerClosesAfterSuccess for recovery testing
+    - Create TestCircuitBreakerReopensOnFailure for half-open failure testing
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.2_
+  - [ ] 2.2 Create helper function executeFailingOperations
+    - Extract common pattern for executing multiple failing operations
+    - _Requirements: 2.1, 2.4_
+  - [ ] 2.3 Verify tests pass and complexity is below 15
+    - Run go test for the file
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 3. Refactor pkg/monitor/monitor_test.go
+  - [ ] 3.1 Extract event collection setup helper
+    - Create setupEventCollection function to initialize event channels and callbacks
+    - _Requirements: 2.1, 2.4_
+  - [ ] 3.2 Split TestFileSystemMonitorIntegration into focused helpers
+    - Create testFileCreationEvent helper for file creation testing
+    - Create testFileModificationEvent helper for file modification testing
+    - Create testFileDeletionEvent helper for file deletion testing
+    - Create validateFileEvent helper for event validation
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.1_
+  - [ ] 3.3 Verify tests pass and complexity is below 15
+    - Run go test for the file
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 4. Refactor internal/server/server_resources_test.go
+  - [ ] 4.1 Extract document setup helper
+    - Create setupTestCacheDocuments function to prepare test documents
+    - _Requirements: 2.1, 2.4_
+  - [ ] 4.2 Create validation helpers for TestHandleResourcesList
+    - Create validateResourceListBasics for basic response validation
+    - Create validateResourceProperties for resource property validation
+    - Create validateResourceURIs for URI pattern validation
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.3_
+  - [ ] 4.3 Verify tests pass and complexity is below 15
+    - Run go test for the file
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 5. Refactor internal/server/server_prompts_test.go
+  - [ ] 5.1 Extract prompt setup helper
+    - Create setupTestPrompt function to prepare test prompt files
+    - _Requirements: 2.1, 2.4_
+  - [ ] 5.2 Create validation helpers for TestHandlePromptsGet
+    - Create validatePromptsGetResponse for response structure validation
+    - Create validateMessageStructure for message validation
+    - Create validateArgumentSubstitution for template substitution validation
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.4_
+  - [ ] 5.3 Verify tests pass and complexity is below 15
+    - Run go test for the file
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 6. Refactor pkg/scanner/scanner_test.go
+  - [ ] 6.1 Extract directory setup helper
+    - Create setupScanTestDirectories function to prepare test directory structure
+    - _Requirements: 2.1, 2.4_
+  - [ ] 6.2 Create validation helper for TestScanDirectoryIntegration
+    - Create validateScannedDocuments function for document validation
+    - Split verification logic into focused helpers
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.7_
+  - [ ] 6.3 Verify tests pass and complexity is below 15
+    - Run go test for the file
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 7. Refactor pkg/logging/manager_test.go
+  - [ ] 7.1 Split TestLoggingManagerSpecializedMethods into separate test functions
+    - Create individual test functions for each specialized logging method
+    - Create validateLogOutput helper for log validation
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.6_
+  - [ ] 7.2 Verify tests pass and complexity is below 15
+    - Run go test for the file
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 8. Refactor pkg/errors/graceful_degradation_test.go
+  - [ ] 8.1 Split TestGracefulDegradationManager into separate test functions
+    - Create TestGracefulDegradationRegistration for component registration
+    - Create TestGracefulDegradationErrorRecording for error threshold testing
+    - Create TestGracefulDegradationTimeWindow for time window cleanup testing
+    - Create TestGracefulDegradationRecovery for recovery condition testing
+    - Create TestGracefulDegradationOverallHealth for overall health testing
+    - Create TestGracefulDegradationExecution for execution path testing
+    - Create TestGracefulDegradationForceRecovery for force recovery testing
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.5_
+  - [ ] 8.2 Create helper function setupDegradationManager
+    - Extract common manager setup pattern
+    - _Requirements: 2.1, 2.4_
+  - [ ] 8.3 Verify tests pass and complexity is below 15
+    - Run go test for the file
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 9. Refactor internal/server/integration_test.go - Part 1
+  - [ ] 9.1 Extract common setup helpers
+    - Create setupTestDirectories function for directory creation
+    - Create setupTestDocuments function for test document creation
+    - Create setupContentTestDocuments function for content test documents
+    - Create setupDocumentationDirectories function for documentation system setup
+    - _Requirements: 2.1, 2.4_
+  - [ ] 9.2 Create common validation helpers
+    - Create validateResourceListResponse for list response validation
+    - Create validateResourceReadResponse for read response validation
+    - Create validateResourceContent for content validation
+    - Create validateJSONRPCResponse for JSON-RPC compliance validation
+    - Create validateCacheState for cache state validation
+    - Create validateFileEvent for file event validation
+    - _Requirements: 2.1, 2.4_
+
+- [ ] 10. Refactor internal/server/integration_test.go - Part 2
+  - [ ] 10.1 Refactor TestDocumentationSystemIntegration
+    - Extract file modification testing into testFileModification helper
+    - Extract file deletion testing into testFileDeletion helper
+    - Use setupDocumentationDirectories and validateCacheState helpers
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.4_
+  - [ ] 10.2 Verify TestDocumentationSystemIntegration complexity is below 15
+    - Run go test for the specific test
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 11. Refactor internal/server/integration_test.go - Part 3
+  - [ ] 11.1 Convert TestMCPResourceErrorScenariosIntegration to table-driven test
+    - Define error scenario test cases in a table
+    - Create testErrorScenario helper function
+    - Iterate through scenarios using t.Run
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.5_
+  - [ ] 11.2 Verify TestMCPResourceErrorScenariosIntegration complexity is below 15
+    - Run go test for the specific test
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 12. Refactor internal/server/integration_test.go - Part 4
+  - [ ] 12.1 Refactor TestResourceContentRetrievalIntegration
+    - Use setupContentTestDocuments helper
+    - Create validateContentText helper for content verification
+    - Simplify test logic using extracted helpers
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.3_
+  - [ ] 12.2 Verify TestResourceContentRetrievalIntegration complexity is below 15
+    - Run go test for the specific test
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 13. Refactor internal/server/integration_test.go - Part 5
+  - [ ] 13.1 Split TestMCPProtocolComplianceIntegration into separate test functions
+    - Create TestJSONRPCCompliance for JSON-RPC 2.0 compliance testing
+    - Create TestMCPResourceStructureCompliance for resource structure testing
+    - Create TestMCPResourceContentCompliance for content structure testing
+    - Create TestErrorResponseCompliance for error response testing
+    - Use validateJSONRPCResponse helper
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.2_
+  - [ ] 13.2 Verify all split test functions have complexity below 15
+    - Run go test for the specific tests
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 14. Refactor internal/server/integration_test.go - Part 6
+  - [ ] 14.1 Split TestMCPResourceMethodsIntegration into separate test functions
+    - Keep existing TestResourcesListIntegration sub-test as separate function
+    - Keep existing TestResourcesReadGuidelinesIntegration sub-test as separate function
+    - Keep existing TestResourcesReadPatternsIntegration sub-test as separate function
+    - Keep existing TestResourcesReadADRIntegration sub-test as separate function
+    - Use setupTestDirectories, setupTestDocuments, and validation helpers
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1_
+  - [ ] 14.2 Verify all split test functions have complexity below 15
+    - Run go test for the specific tests
+    - Run gocyclo to verify complexity reduction
+    - _Requirements: 5.1, 5.3_
+
+- [ ] 15. Final verification
+  - [ ] 15.1 Run complete test suite
+    - Execute make test to verify all tests pass
+    - _Requirements: 5.1_
+  - [ ] 15.2 Run build verification
+    - Execute make build to verify project builds successfully
+    - _Requirements: 5.2_
+  - [ ] 15.3 Verify cyclomatic complexity across all files
+    - Run gocyclo -over 15 . to confirm no functions exceed threshold
+    - _Requirements: 5.3_
+  - [ ] 15.4 Verify test coverage unchanged
+    - Execute make test-coverage and compare with baseline
+    - _Requirements: 5.1_
