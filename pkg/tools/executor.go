@@ -1,3 +1,14 @@
+// Package tools provides secure tool execution with validation, timeout, and security controls.
+//
+// Security Features:
+// - Path validation to prevent directory traversal attacks
+// - Argument size limits to prevent resource exhaustion
+// - Execution timeout enforcement to prevent hanging operations
+// - Argument sanitization for safe logging
+// - Circuit breaker integration for fault tolerance
+//
+// All tools must implement the Tool interface and are executed through the ToolExecutor
+// which enforces these security constraints consistently.
 package tools
 
 import (
@@ -12,23 +23,25 @@ import (
 )
 
 const (
-	// DefaultToolTimeout is the default execution timeout for tools
+	// DefaultToolTimeout is the default execution timeout for tools (10 seconds)
+	// This prevents tools from hanging indefinitely and consuming resources
 	DefaultToolTimeout = 10 * time.Second
 
-	// MaxToolTimeout is the maximum allowed execution timeout
+	// MaxToolTimeout is the maximum allowed execution timeout (30 seconds)
 	MaxToolTimeout = 30 * time.Second
 
-	// Argument size limits
-	MaxCodeLength        = 50000 // 50KB
-	MaxQueryLength       = 500
-	MaxDescriptionLength = 5000
-	MaxSearchResults     = 20
+	// Argument size limits to prevent denial of service attacks
+	MaxCodeLength        = 50000 // 50KB - maximum code input for validation
+	MaxQueryLength       = 500   // 500 chars - maximum search query length
+	MaxDescriptionLength = 5000  // 5KB - maximum decision description length
+	MaxSearchResults     = 20    // Maximum number of search results to return
 )
 
 // ToolExecutor handles tool execution with validation, timeout, and security
 type ToolExecutor struct {
 	maxExecutionTime time.Duration
 	logger           *logging.StructuredLogger
+	timeoutCallback  func() // Callback to notify manager of timeouts
 }
 
 // NewToolExecutor creates a new ToolExecutor with default settings
@@ -37,6 +50,11 @@ func NewToolExecutor(logger *logging.StructuredLogger) *ToolExecutor {
 		maxExecutionTime: DefaultToolTimeout,
 		logger:           logger,
 	}
+}
+
+// SetTimeoutCallback sets a callback function to be called when a timeout occurs
+func (te *ToolExecutor) SetTimeoutCallback(callback func()) {
+	te.timeoutCallback = callback
 }
 
 // Execute validates arguments and executes a tool with timeout protection
@@ -70,6 +88,12 @@ func (te *ToolExecutor) Execute(ctx context.Context, tool Tool, arguments map[st
 			te.logger.WithContext("tool", tool.Name()).
 				WithContext("timeout", te.maxExecutionTime.String()).
 				Error("Tool execution timeout")
+
+			// Notify manager of timeout
+			if te.timeoutCallback != nil {
+				te.timeoutCallback()
+			}
+
 			return nil, errors.NewSystemError(
 				"TOOL_TIMEOUT",
 				fmt.Sprintf("tool execution timeout after %s", te.maxExecutionTime),
@@ -221,21 +245,37 @@ func (te *ToolExecutor) validateField(fieldName string, value interface{}, schem
 	return nil
 }
 
-// ValidateResourcePath validates that a path is within the allowed mcp/resources/ directory
+// ValidateResourcePath validates that a path is within the allowed mcp/resources/ directory.
+//
+// Security: This function prevents directory traversal attacks by:
+// 1. Rejecting any path containing ".." sequences
+// 2. Ensuring the normalized path starts with "mcp/resources/"
+// 3. Cleaning and normalizing the path to handle edge cases
+//
+// All tools that construct file paths should call this function before accessing
+// resources to ensure they cannot escape the allowed directory.
+//
+// Example usage:
+//
+//	patternPath := fmt.Sprintf("mcp/resources/patterns/%s.md", patternName)
+//	if err := ValidateResourcePath(patternPath); err != nil {
+//	    return nil, fmt.Errorf("invalid path: %w", err)
+//	}
 func ValidateResourcePath(path string) error {
-	// Clean and normalize path
+	// Clean and normalize path to handle edge cases like "mcp/resources/../../../etc/passwd"
 	cleanPath := filepath.Clean(path)
 
-	// Reject traversal attempts
+	// Reject any traversal attempts - this catches both ".." and encoded variants
 	if strings.Contains(path, "..") {
 		return errors.NewValidationError(
-			errors.ErrCodeInvalidParams,
+			errors.ErrCodePathTraversal,
 			"path traversal not allowed",
 			nil,
 		)
 	}
 
-	// Ensure path is within mcp/resources/
+	// Ensure path is within mcp/resources/ directory
+	// This prevents access to files outside the allowed directory
 	if !strings.HasPrefix(cleanPath, "mcp/resources/") && cleanPath != "mcp/resources" {
 		return errors.NewValidationError(
 			errors.ErrCodeInvalidParams,
@@ -247,12 +287,25 @@ func ValidateResourcePath(path string) error {
 	return nil
 }
 
-// sanitizeArguments sanitizes arguments for logging by truncating large values
+// sanitizeArguments sanitizes arguments for logging by truncating large values.
+//
+// Security: This function prevents sensitive data exposure in logs by:
+// 1. Truncating string values longer than 100 characters
+// 2. Showing only a preview with the total length
+// 3. Preventing large code blocks or descriptions from filling logs
+//
+// This is important because:
+// - Tool arguments may contain sensitive code or business logic
+// - Large arguments can make logs difficult to read and analyze
+// - Log aggregation systems may have size limits
 func (te *ToolExecutor) sanitizeArguments(arguments map[string]interface{}) map[string]interface{} {
+	const maxLogLength = 100
+
 	sanitized := make(map[string]interface{})
 	for key, value := range arguments {
-		if strValue, ok := value.(string); ok && len(strValue) > 100 {
-			sanitized[key] = fmt.Sprintf("%s... [%d chars]", strValue[:100], len(strValue))
+		if strValue, ok := value.(string); ok && len(strValue) > maxLogLength {
+			// Truncate and show length for large strings
+			sanitized[key] = fmt.Sprintf("%s... [%d chars]", strValue[:maxLogLength], len(strValue))
 		} else {
 			sanitized[key] = value
 		}

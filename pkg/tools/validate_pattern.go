@@ -76,8 +76,15 @@ func (vpt *ValidatePatternTool) Execute(ctx context.Context, arguments map[strin
 		return nil, fmt.Errorf("code exceeds maximum length of 50000 characters")
 	}
 
-	// Load pattern document from cache
+	// Construct and validate pattern path
 	patternPath := fmt.Sprintf("mcp/resources/patterns/%s.md", patternName)
+
+	// Validate path to prevent directory traversal
+	if err := ValidateResourcePath(patternPath); err != nil {
+		return nil, fmt.Errorf("invalid pattern path: %w", err)
+	}
+
+	// Load pattern document from cache
 	patternDoc, err := vpt.cache.Get(patternPath)
 	if err != nil {
 		return nil, fmt.Errorf("pattern not found: %s", patternName)

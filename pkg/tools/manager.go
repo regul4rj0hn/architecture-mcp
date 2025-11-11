@@ -33,7 +33,7 @@ type ToolStats struct {
 
 // NewToolManager creates a new ToolManager instance
 func NewToolManager(logger *logging.StructuredLogger) *ToolManager {
-	return &ToolManager{
+	tm := &ToolManager{
 		registry: make(map[string]Tool),
 		executor: NewToolExecutor(logger),
 		logger:   logger,
@@ -42,6 +42,13 @@ func NewToolManager(logger *logging.StructuredLogger) *ToolManager {
 			ExecutionTimeByName: make(map[string]int64),
 		},
 	}
+
+	// Set timeout callback to track timeout events
+	tm.executor.SetTimeoutCallback(func() {
+		tm.RecordTimeout()
+	})
+
+	return tm
 }
 
 // RegisterTool registers a new tool in the manager
