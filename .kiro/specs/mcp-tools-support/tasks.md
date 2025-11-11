@@ -100,7 +100,7 @@
   - Test input validation
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 8. Register tools in server initialization
+- [x] 8. Register tools in server initialization
   - Update initializeToolsSystem() to register ValidatePatternTool
   - Register SearchArchitectureTool
   - Register CheckADRAlignmentTool

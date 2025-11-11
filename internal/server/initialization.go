@@ -257,8 +257,56 @@ func (s *MCPServer) initializeToolsSystem() error {
 	toolLogger := loggingManager.GetLogger("tools")
 	s.toolManager = tools.NewToolManager(toolLogger)
 
-	// Register built-in tools would go here in future tasks
-	// For now, just initialize the manager
+	// Register built-in tools
+	var registrationErrors []error
+
+	// Register ValidatePatternTool
+	validateTool := tools.NewValidatePatternTool(s.cache, toolLogger)
+	if err := s.toolManager.RegisterTool(validateTool); err != nil {
+		s.logger.WithError(err).
+			WithContext("tool", validateTool.Name()).
+			Error("Failed to register ValidatePatternTool")
+		registrationErrors = append(registrationErrors, fmt.Errorf("ValidatePatternTool: %w", err))
+	} else {
+		s.logger.WithContext("tool", validateTool.Name()).
+			Info("Registered tool successfully")
+	}
+
+	// Register SearchArchitectureTool
+	searchTool := tools.NewSearchArchitectureTool(s.cache, toolLogger)
+	if err := s.toolManager.RegisterTool(searchTool); err != nil {
+		s.logger.WithError(err).
+			WithContext("tool", searchTool.Name()).
+			Error("Failed to register SearchArchitectureTool")
+		registrationErrors = append(registrationErrors, fmt.Errorf("SearchArchitectureTool: %w", err))
+	} else {
+		s.logger.WithContext("tool", searchTool.Name()).
+			Info("Registered tool successfully")
+	}
+
+	// Register CheckADRAlignmentTool
+	adrTool := tools.NewCheckADRAlignmentTool(s.cache, toolLogger)
+	if err := s.toolManager.RegisterTool(adrTool); err != nil {
+		s.logger.WithError(err).
+			WithContext("tool", adrTool.Name()).
+			Error("Failed to register CheckADRAlignmentTool")
+		registrationErrors = append(registrationErrors, fmt.Errorf("CheckADRAlignmentTool: %w", err))
+	} else {
+		s.logger.WithContext("tool", adrTool.Name()).
+			Info("Registered tool successfully")
+	}
+
+	// Validate all registered tools
+	registeredTools := s.toolManager.ListTools()
+	s.logger.WithContext("tool_count", len(registeredTools)).
+		Info("Tools validation complete")
+
+	// Log any registration errors but don't fail initialization
+	if len(registrationErrors) > 0 {
+		s.logger.WithContext("error_count", len(registrationErrors)).
+			Warn("Some tools failed to register")
+		// Tools system can still function with partial registration
+	}
 
 	s.logger.Info("Tools system initialized successfully")
 	return nil
