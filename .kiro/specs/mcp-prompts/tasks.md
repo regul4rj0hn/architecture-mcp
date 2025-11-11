@@ -40,33 +40,33 @@
     - Create `pkg/prompts/renderer_test.go` with tests for variable substitution, resource embedding, and edge cases
     - _Requirements: 2.4, 2.5, 3.1, 3.2_
 
-- [ ] 4. Implement prompt manager
-  - [ ] 4.1 Create prompt manager structure
+- [x] 4. Implement prompt manager
+  - [x] 4.1 Create prompt manager structure
     - Create `pkg/prompts/manager.go` with PromptManager struct containing registry, cache reference, and mutex
     - Implement NewPromptManager() constructor
     - _Requirements: 4.1_
   
-  - [ ] 4.2 Implement prompt loading and registry management
+  - [x] 4.2 Implement prompt loading and registry management
     - Implement LoadPrompts() method to scan prompts/ directory and load JSON files
     - Implement GetPrompt() method to retrieve prompt definition by name
     - Implement ListPrompts() method to return all available prompts sorted alphabetically
     - Add error handling for malformed prompt files (log and skip)
     - _Requirements: 1.1, 1.4, 4.1, 4.2, 4.5_
   
-  - [ ] 4.3 Implement prompt rendering orchestration
+  - [x] 4.3 Implement prompt rendering orchestration
     - Implement RenderPrompt() method that validates arguments, renders templates, and embeds resources
     - Integrate TemplateRenderer for template processing
     - Return MCPPromptsGetResult with rendered messages
     - _Requirements: 2.1, 2.4, 2.5, 3.1, 3.2_
   
-  - [ ] 4.4 Implement hot-reload functionality
+  - [x] 4.4 Implement hot-reload functionality
     - Implement ReloadPrompts() method to refresh prompt registry
     - Add file system event handler for prompts directory changes
     - Integrate with existing FileSystemMonitor to watch prompts/ directory
     - Implement debouncing to batch rapid file changes (500ms delay)
     - _Requirements: 4.3, 4.4_
   
-  - [ ]* 4.5 Write unit tests for prompt manager
+  - [x] 4.5 Write unit tests for prompt manager
     - Create `pkg/prompts/manager_test.go` with tests for loading, registry management, hot reload, and concurrent access
     - _Requirements: 4.1, 4.3, 4.4_
 
