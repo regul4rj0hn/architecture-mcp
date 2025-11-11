@@ -1,6 +1,6 @@
 # Multi-stage build for MCP Architecture Service
 # Stage 1: Build the Go binary
-FROM golang:1.21-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -47,11 +47,8 @@ RUN mkdir -p /app/tmp /app/logs && \
 # Copy the binary from builder stage
 COPY --from=builder /build/mcp-server /app/mcp-server
 
-# Copy documentation files (required for the service to function)
-COPY --chown=mcpuser:mcpuser docs/ /app/docs/
-
-# Copy prompt definitions (required for prompts capability)
-COPY --chown=mcpuser:mcpuser prompts/ /app/prompts/
+# Copy MCP assets (resources and prompts required for the service to function)
+COPY --chown=mcpuser:mcpuser mcp/ /app/mcp/
 
 # Ensure the binary is executable
 RUN chmod +x /app/mcp-server
@@ -69,11 +66,10 @@ RUN echo '#!/bin/sh' > /app/healthcheck.sh && \
 # Switch to non-root user
 USER mcpuser
 
-# Declare volume for prompts directory to support customization
-VOLUME ["/app/prompts"]
+# Declare volume for MCP directory to support customization
+VOLUME ["/app/mcp"]
 
 # Set environment variables
-ENV DOCS_PATH=/app/docs
 ENV TMPDIR=/app/tmp
 
 # Security labels and metadata

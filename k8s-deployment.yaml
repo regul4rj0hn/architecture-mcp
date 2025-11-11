@@ -162,8 +162,6 @@ spec:
         
         # Environment variables
         env:
-        - name: DOCS_PATH
-          value: "/app/docs"
         - name: TMPDIR
           value: "/app/tmp"
         
@@ -173,8 +171,8 @@ spec:
           mountPath: /app/tmp
         - name: logs-volume
           mountPath: /app/logs
-        - name: prompts-volume
-          mountPath: /app/prompts
+        - name: mcp-volume
+          mountPath: /app/mcp
           readOnly: true
         
         # Liveness probe using the health check script
@@ -218,7 +216,7 @@ spec:
       - name: logs-volume
         emptyDir:
           sizeLimit: 100Mi
-      - name: prompts-volume
+      - name: mcp-volume
         configMap:
           name: mcp-prompts-config
       

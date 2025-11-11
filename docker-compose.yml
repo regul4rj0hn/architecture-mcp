@@ -26,13 +26,12 @@ services:
     
     # Environment variables
     environment:
-      - DOCS_PATH=/app/docs
       - TMPDIR=/app/tmp
     
     # Volume mounts
     volumes:
-      # Mount local prompts directory for customization
-      - ./prompts:/app/prompts:ro
+      # Mount local MCP directory for customization
+      - ./mcp:/app/mcp:ro
     
     # Volume mounts for writable directories
     tmpfs:
