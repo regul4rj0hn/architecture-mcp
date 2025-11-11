@@ -1,0 +1,31 @@
+{
+  "name": "guided-pattern-validation",
+  "description": "Guided workflow for validating code against architectural patterns with tool assistance",
+  "arguments": [
+    {
+      "name": "code",
+      "description": "The code snippet to validate",
+      "required": true,
+      "maxLength": 10000
+    },
+    {
+      "name": "pattern_name",
+      "description": "Name of the pattern to validate against (e.g., 'repository-pattern')",
+      "required": true
+    },
+    {
+      "name": "language",
+      "description": "Programming language of the code",
+      "required": false
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "I'll help you validate your {{language}} code against the {{pattern_name}} architectural pattern.\n\n# Code to Validate\n\n```{{language}}\n{{code}}\n```\n\n# Pattern Reference\n\n{{resource:architecture://patterns/{{pattern_name}}.md}}\n\n# Validation Tool\n\nYou can use the following tool to automatically validate the code:\n\n{{tool:validate-against-pattern}}\n\n# Workflow Instructions\n\n1. **Review the Pattern**: First, examine the pattern documentation above to understand the requirements and best practices.\n\n2. **Run Validation**: Use the validate-against-pattern tool with the following parameters:\n   - code: The code snippet provided above\n   - pattern_name: {{pattern_name}}\n   - language: {{language}}\n\n3. **Analyze Results**: The tool will return:\n   - Compliance status (compliant/non-compliant)\n   - List of violations with severity levels\n   - Actionable suggestions for improvements\n\n4. **Provide Guidance**: Based on the validation results:\n   - Explain any violations found\n   - Prioritize fixes by severity (errors before warnings)\n   - Provide code examples showing how to fix violations\n   - Highlight what the code does well\n\n5. **Suggest Next Steps**: Recommend:\n   - Immediate fixes for critical violations\n   - Refactoring opportunities for better pattern alignment\n   - Additional patterns that might be relevant\n\nPlease proceed with the validation and provide comprehensive feedback."
+      }
+    }
+  ]
+}

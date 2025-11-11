@@ -12,6 +12,7 @@ import (
 	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 	"mcp-architecture-service/pkg/logging"
+	"mcp-architecture-service/pkg/prompts"
 	"mcp-architecture-service/pkg/tools"
 )
 
@@ -308,8 +309,25 @@ func (s *MCPServer) initializeToolsSystem() error {
 		// Tools system can still function with partial registration
 	}
 
+	// Inject tool manager into prompt manager for prompt-tool integration
+	if s.promptManager != nil {
+		// Create adapter to bridge tools.ToolManager and prompts.ToolManagerInterface
+		adapter := &toolManagerAdapter{tm: s.toolManager}
+		s.promptManager.SetToolManager(adapter)
+		s.logger.Info("Tool manager injected into prompt manager for tool reference expansion")
+	}
+
 	s.logger.Info("Tools system initialized successfully")
 	return nil
+}
+
+// toolManagerAdapter adapts tools.ToolManager to prompts.ToolManagerInterface
+type toolManagerAdapter struct {
+	tm *tools.ToolManager
+}
+
+func (a *toolManagerAdapter) GetTool(name string) (prompts.ToolInterface, error) {
+	return a.tm.GetTool(name)
 }
 
 // min returns the minimum of two integers

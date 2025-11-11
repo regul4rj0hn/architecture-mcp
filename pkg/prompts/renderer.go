@@ -22,6 +22,7 @@ const (
 type TemplateRenderer struct {
 	cache         *cache.DocumentCache
 	statsRecorder StatsRecorder
+	toolManager   ToolManagerInterface
 }
 
 // StatsRecorder is an interface for recording statistics
@@ -34,6 +35,7 @@ func NewTemplateRenderer(cache *cache.DocumentCache) *TemplateRenderer {
 	return &TemplateRenderer{
 		cache:         cache,
 		statsRecorder: nil, // Will be set later by SetStatsRecorder
+		toolManager:   nil, // Will be set later by SetToolManager
 	}
 }
 
@@ -42,11 +44,18 @@ func (tr *TemplateRenderer) SetStatsRecorder(recorder StatsRecorder) {
 	tr.statsRecorder = recorder
 }
 
+// SetToolManager sets the tool manager for tool reference expansion
+func (tr *TemplateRenderer) SetToolManager(manager ToolManagerInterface) {
+	tr.toolManager = manager
+}
+
 var (
 	// variablePattern matches {{variableName}} for substitution
 	variablePattern = regexp.MustCompile(`\{\{([a-zA-Z0-9_-]+)\}\}`)
 	// resourcePattern matches {{resource:uri}} for resource embedding
 	resourcePattern = regexp.MustCompile(`\{\{resource:([^}]+)\}\}`)
+	// toolPattern matches {{tool:tool-name}} for tool reference embedding
+	toolPattern = regexp.MustCompile(`\{\{tool:([a-z0-9-]+)\}\}`)
 )
 
 // RenderTemplate performs variable substitution on a template string
@@ -113,6 +122,125 @@ func (tr *TemplateRenderer) EmbedResources(template string) (string, error) {
 	}
 
 	return result, nil
+}
+
+// EmbedTools processes tool reference patterns in the template
+// Tool patterns are specified as {{tool:tool-name}} and are expanded to include
+// the tool's description and input schema
+func (tr *TemplateRenderer) EmbedTools(template string) (string, error) {
+	if tr.toolManager == nil {
+		// If no tool manager is set, return template unchanged
+		// This allows the renderer to work without tools support
+		return template, nil
+	}
+
+	matches := toolPattern.FindAllStringSubmatch(template, -1)
+	result := template
+
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+
+		placeholder := match[0] // Full match like {{tool:validate-against-pattern}}
+		toolName := match[1]    // Tool name
+
+		tool, err := tr.toolManager.GetTool(toolName)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve tool reference %s: %w", toolName, err)
+		}
+
+		expandedContent := tr.buildToolReference(tool)
+		result = strings.ReplaceAll(result, placeholder, expandedContent)
+	}
+
+	return result, nil
+}
+
+// buildToolReference formats a tool into an expanded reference with description and schema
+func (tr *TemplateRenderer) buildToolReference(tool ToolInterface) string {
+	var builder strings.Builder
+
+	builder.WriteString(fmt.Sprintf("Tool: %s\n", tool.Name()))
+	builder.WriteString(fmt.Sprintf("Description: %s\n", tool.Description()))
+
+	schema := tool.InputSchema()
+	if schema != nil {
+		builder.WriteString("Parameters:\n")
+
+		// Extract properties from schema
+		if properties, ok := schema["properties"].(map[string]interface{}); ok {
+			required := make(map[string]bool)
+			if reqList, ok := schema["required"].([]interface{}); ok {
+				for _, r := range reqList {
+					if reqStr, ok := r.(string); ok {
+						required[reqStr] = true
+					}
+				}
+			}
+
+			for paramName, paramDef := range properties {
+				if paramMap, ok := paramDef.(map[string]interface{}); ok {
+					requiredStr := ""
+					if required[paramName] {
+						requiredStr = " (required)"
+					} else {
+						requiredStr = " (optional)"
+					}
+
+					description := ""
+					if desc, ok := paramMap["description"].(string); ok {
+						description = desc
+					}
+
+					// Format parameter with constraints
+					constraints := tr.formatParameterConstraints(paramMap)
+					if constraints != "" {
+						builder.WriteString(fmt.Sprintf("  - %s%s: %s %s\n", paramName, requiredStr, description, constraints))
+					} else {
+						builder.WriteString(fmt.Sprintf("  - %s%s: %s\n", paramName, requiredStr, description))
+					}
+				}
+			}
+		}
+	}
+
+	return builder.String()
+}
+
+// formatParameterConstraints extracts and formats parameter constraints from schema
+func (tr *TemplateRenderer) formatParameterConstraints(paramMap map[string]interface{}) string {
+	var constraints []string
+
+	if maxLength, ok := paramMap["maxLength"].(float64); ok {
+		constraints = append(constraints, fmt.Sprintf("max %d chars", int(maxLength)))
+	}
+
+	if minLength, ok := paramMap["minLength"].(float64); ok {
+		constraints = append(constraints, fmt.Sprintf("min %d chars", int(minLength)))
+	}
+
+	if maximum, ok := paramMap["maximum"].(float64); ok {
+		constraints = append(constraints, fmt.Sprintf("max %d", int(maximum)))
+	}
+
+	if minimum, ok := paramMap["minimum"].(float64); ok {
+		constraints = append(constraints, fmt.Sprintf("min %d", int(minimum)))
+	}
+
+	if enum, ok := paramMap["enum"].([]interface{}); ok {
+		enumStrs := make([]string, 0, len(enum))
+		for _, e := range enum {
+			enumStrs = append(enumStrs, fmt.Sprintf("%v", e))
+		}
+		constraints = append(constraints, fmt.Sprintf("one of: %s", strings.Join(enumStrs, ", ")))
+	}
+
+	if len(constraints) > 0 {
+		return "(" + strings.Join(constraints, ", ") + ")"
+	}
+
+	return ""
 }
 
 // buildEmbeddedContent formats documents into embedded content with size checking

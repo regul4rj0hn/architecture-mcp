@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"mcp-architecture-service/pkg/errors"
@@ -35,21 +36,73 @@ const (
 	MaxQueryLength       = 500   // 500 chars - maximum search query length
 	MaxDescriptionLength = 5000  // 5KB - maximum decision description length
 	MaxSearchResults     = 20    // Maximum number of search results to return
+
+	// DefaultSessionTTL is the default time-to-live for workflow sessions (1 hour)
+	// Sessions are automatically cleaned up after this duration of inactivity
+	DefaultSessionTTL = 1 * time.Hour
 )
+
+// WorkflowContext maintains state for multi-step prompt-guided workflows.
+//
+// This allows tools to:
+// - Access prompt arguments that initiated the workflow
+// - Reference results from previously executed tools in the same session
+// - Maintain continuity across multiple tool invocations
+//
+// Example workflow:
+//  1. Model invokes prompt "review-code-against-patterns" with code argument
+//  2. Prompt suggests using "search-architecture" tool to find relevant patterns
+//  3. Tool can access original code from PromptArgs
+//  4. Tool result stored in ToolResults for subsequent steps
+//  5. Next tool in workflow can reference previous search results
+type WorkflowContext struct {
+	// SessionID uniquely identifies this workflow session
+	SessionID string
+
+	// PromptName is the name of the prompt that initiated this workflow
+	PromptName string
+
+	// PromptArgs contains the original arguments passed to the prompt
+	// Tools can access these to understand the workflow context
+	PromptArgs map[string]interface{}
+
+	// ToolResults stores results from previously executed tools in this session
+	// Key is the tool name, value is the tool's result
+	ToolResults map[string]interface{}
+
+	// CreatedAt tracks when this workflow session was created
+	CreatedAt time.Time
+
+	// LastAccessedAt tracks the last time this session was used
+	// Used for session cleanup and TTL enforcement
+	LastAccessedAt time.Time
+}
 
 // ToolExecutor handles tool execution with validation, timeout, and security
 type ToolExecutor struct {
 	maxExecutionTime time.Duration
 	logger           *logging.StructuredLogger
 	timeoutCallback  func() // Callback to notify manager of timeouts
+
+	// Session-based context storage for workflow state management
+	sessions   map[string]*WorkflowContext
+	sessionsMu sync.RWMutex
+	sessionTTL time.Duration
 }
 
 // NewToolExecutor creates a new ToolExecutor with default settings
 func NewToolExecutor(logger *logging.StructuredLogger) *ToolExecutor {
-	return &ToolExecutor{
+	executor := &ToolExecutor{
 		maxExecutionTime: DefaultToolTimeout,
 		logger:           logger,
+		sessions:         make(map[string]*WorkflowContext),
+		sessionTTL:       DefaultSessionTTL,
 	}
+
+	// Start background cleanup goroutine for expired sessions
+	go executor.cleanupExpiredSessions()
+
+	return executor
 }
 
 // SetTimeoutCallback sets a callback function to be called when a timeout occurs
@@ -311,4 +364,151 @@ func (te *ToolExecutor) sanitizeArguments(arguments map[string]interface{}) map[
 		}
 	}
 	return sanitized
+}
+
+// ExecuteWithContext executes a tool within a workflow context, allowing access to
+// prompt arguments and previous tool results.
+//
+// This method:
+// - Validates arguments like Execute()
+// - Makes workflow context available to tools that need it
+// - Stores tool results in the workflow context for subsequent steps
+// - Updates session last accessed time for TTL management
+//
+// The workflow context is optional - if nil, behaves like Execute().
+// Tools can check if they're running in a workflow by examining the context.
+func (te *ToolExecutor) ExecuteWithContext(ctx context.Context, tool Tool, arguments map[string]interface{}, workflowCtx *WorkflowContext) (interface{}, error) {
+	// Update session last accessed time if context provided
+	if workflowCtx != nil {
+		te.sessionsMu.Lock()
+		workflowCtx.LastAccessedAt = time.Now()
+		te.sessionsMu.Unlock()
+
+		// Add workflow context to logger
+		te.logger.WithContext("session_id", workflowCtx.SessionID).
+			WithContext("prompt_name", workflowCtx.PromptName).
+			Info("Executing tool with workflow context")
+	}
+
+	// Execute the tool (validation and execution logic is the same)
+	result, err := te.Execute(ctx, tool, arguments)
+
+	// Store result in workflow context if execution succeeded
+	if err == nil && workflowCtx != nil {
+		te.sessionsMu.Lock()
+		if workflowCtx.ToolResults == nil {
+			workflowCtx.ToolResults = make(map[string]interface{})
+		}
+		workflowCtx.ToolResults[tool.Name()] = result
+		te.sessionsMu.Unlock()
+
+		te.logger.WithContext("tool", tool.Name()).
+			WithContext("session_id", workflowCtx.SessionID).
+			Info("Tool result stored in workflow context")
+	}
+
+	return result, err
+}
+
+// CreateSession creates a new workflow session and stores it for later retrieval.
+//
+// Sessions enable multi-step workflows where:
+// - A prompt initiates a workflow with specific arguments
+// - Multiple tools are invoked in sequence
+// - Each tool can access the original prompt arguments
+// - Tools can reference results from previous tools in the workflow
+//
+// Returns the created WorkflowContext which should be passed to ExecuteWithContext.
+func (te *ToolExecutor) CreateSession(sessionID, promptName string, promptArgs map[string]interface{}) *WorkflowContext {
+	now := time.Now()
+	workflowCtx := &WorkflowContext{
+		SessionID:      sessionID,
+		PromptName:     promptName,
+		PromptArgs:     promptArgs,
+		ToolResults:    make(map[string]interface{}),
+		CreatedAt:      now,
+		LastAccessedAt: now,
+	}
+
+	te.sessionsMu.Lock()
+	te.sessions[sessionID] = workflowCtx
+	te.sessionsMu.Unlock()
+
+	te.logger.WithContext("session_id", sessionID).
+		WithContext("prompt_name", promptName).
+		Info("Created workflow session")
+
+	return workflowCtx
+}
+
+// GetSession retrieves an existing workflow session by ID.
+//
+// Returns nil if the session doesn't exist or has expired.
+// This allows resuming a workflow across multiple tool invocations.
+func (te *ToolExecutor) GetSession(sessionID string) *WorkflowContext {
+	te.sessionsMu.RLock()
+	defer te.sessionsMu.RUnlock()
+
+	return te.sessions[sessionID]
+}
+
+// DeleteSession removes a workflow session from storage.
+//
+// This should be called when:
+// - A workflow completes successfully
+// - A workflow is explicitly cancelled
+// - An error occurs that terminates the workflow
+//
+// Sessions are also automatically cleaned up after TTL expiration.
+func (te *ToolExecutor) DeleteSession(sessionID string) {
+	te.sessionsMu.Lock()
+	delete(te.sessions, sessionID)
+	te.sessionsMu.Unlock()
+
+	te.logger.WithContext("session_id", sessionID).
+		Info("Deleted workflow session")
+}
+
+// cleanupExpiredSessions runs in the background and removes sessions that haven't
+// been accessed within the TTL period.
+//
+// This prevents memory leaks from abandoned workflows and ensures resources are
+// freed for sessions that are no longer active.
+func (te *ToolExecutor) cleanupExpiredSessions() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		now := time.Now()
+		expiredSessions := []string{}
+
+		te.sessionsMu.RLock()
+		for sessionID, session := range te.sessions {
+			if now.Sub(session.LastAccessedAt) > te.sessionTTL {
+				expiredSessions = append(expiredSessions, sessionID)
+			}
+		}
+		te.sessionsMu.RUnlock()
+
+		// Delete expired sessions
+		if len(expiredSessions) > 0 {
+			te.sessionsMu.Lock()
+			for _, sessionID := range expiredSessions {
+				delete(te.sessions, sessionID)
+			}
+			te.sessionsMu.Unlock()
+
+			te.logger.WithContext("expired_count", len(expiredSessions)).
+				Info("Cleaned up expired workflow sessions")
+		}
+	}
+}
+
+// GetSessionCount returns the current number of active workflow sessions.
+// Useful for monitoring and debugging.
+func (te *ToolExecutor) GetSessionCount() int {
+	te.sessionsMu.RLock()
+	defer te.sessionsMu.RUnlock()
+
+	return len(te.sessions)
 }

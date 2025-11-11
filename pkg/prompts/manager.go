@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -60,6 +61,24 @@ func NewPromptManager(promptsDir string, cache *cache.DocumentCache, monitor *mo
 	// Set the stats recorder on the renderer
 	renderer.SetStatsRecorder(pm)
 	return pm
+}
+
+// SetToolManager injects the tool manager dependency for tool reference expansion
+func (pm *PromptManager) SetToolManager(toolManager ToolManagerInterface) {
+	pm.renderer.SetToolManager(toolManager)
+	pm.logger.Info("Tool manager configured for prompt-tool integration")
+}
+
+// ToolManagerInterface is an interface for accessing tool definitions
+type ToolManagerInterface interface {
+	GetTool(name string) (ToolInterface, error)
+}
+
+// ToolInterface represents a tool with its metadata
+type ToolInterface interface {
+	Name() string
+	Description() string
+	InputSchema() map[string]interface{}
 }
 
 // LoadPrompts scans the prompts directory and loads all JSON prompt definitions
@@ -135,12 +154,44 @@ func (pm *PromptManager) loadPromptFile(filePath string) error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
+	// Validate tool references if tool manager is available
+	if pm.renderer.toolManager != nil {
+		if err := pm.validateToolReferences(&def); err != nil {
+			pm.logger.WithError(err).
+				WithContext("prompt_name", def.Name).
+				WithContext("file", filepath.Base(filePath)).
+				Warn("Prompt contains invalid tool references")
+			// Don't fail loading, just warn
+		}
+	}
+
 	// Add to registry
 	pm.registry[def.Name] = &def
 
 	pm.logger.WithContext("prompt_name", def.Name).
 		WithContext("file", filepath.Base(filePath)).
 		Debug("Prompt definition loaded")
+
+	return nil
+}
+
+// validateToolReferences checks if all tool references in a prompt are valid
+func (pm *PromptManager) validateToolReferences(def *PromptDefinition) error {
+	toolPattern := regexp.MustCompile(`\{\{tool:([a-z0-9-]+)\}\}`)
+
+	for i, msg := range def.Messages {
+		matches := toolPattern.FindAllStringSubmatch(msg.Content.Text, -1)
+		for _, match := range matches {
+			if len(match) < 2 {
+				continue
+			}
+
+			toolName := match[1]
+			if _, err := pm.renderer.toolManager.GetTool(toolName); err != nil {
+				return fmt.Errorf("message %d references non-existent tool: %s", i, toolName)
+			}
+		}
+	}
 
 	return nil
 }
@@ -233,7 +284,7 @@ func (pm *PromptManager) RenderPrompt(name string, arguments map[string]interfac
 		}
 
 		// Embed resources
-		finalText, err := pm.renderer.EmbedResources(renderedText)
+		withResources, err := pm.renderer.EmbedResources(renderedText)
 		if err != nil {
 			duration := time.Since(startTime)
 			pm.recordFailedInvocation(name, duration)
@@ -243,6 +294,19 @@ func (pm *PromptManager) RenderPrompt(name string, arguments map[string]interfac
 				WithContext("duration_ms", duration.Milliseconds()).
 				Error("Failed to embed resources in prompt")
 			return nil, fmt.Errorf("failed to embed resources in message %d: %w", i, err)
+		}
+
+		// Embed tools
+		finalText, err := pm.renderer.EmbedTools(withResources)
+		if err != nil {
+			duration := time.Since(startTime)
+			pm.recordFailedInvocation(name, duration)
+			pm.logger.WithError(err).
+				WithContext("prompt_name", name).
+				WithContext("message_index", i).
+				WithContext("duration_ms", duration.Milliseconds()).
+				Error("Failed to embed tools in prompt")
+			return nil, fmt.Errorf("failed to embed tools in message %d: %w", i, err)
 		}
 
 		messages = append(messages, models.MCPPromptMessage{

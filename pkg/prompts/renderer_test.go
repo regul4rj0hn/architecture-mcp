@@ -501,3 +501,293 @@ func TestNewTemplateRenderer(t *testing.T) {
 		t.Error("NewTemplateRenderer() did not set cache correctly")
 	}
 }
+
+// Mock tool for testing
+type mockTool struct {
+	name        string
+	description string
+	schema      map[string]interface{}
+}
+
+func (m *mockTool) Name() string {
+	return m.name
+}
+
+func (m *mockTool) Description() string {
+	return m.description
+}
+
+func (m *mockTool) InputSchema() map[string]interface{} {
+	return m.schema
+}
+
+// Mock tool manager for testing
+type mockToolManager struct {
+	tools map[string]ToolInterface
+}
+
+func (m *mockToolManager) GetTool(name string) (ToolInterface, error) {
+	tool, exists := m.tools[name]
+	if !exists {
+		return nil, fmt.Errorf("tool not found: %s", name)
+	}
+	return tool, nil
+}
+
+func TestEmbedTools(t *testing.T) {
+	cache := cache.NewDocumentCache()
+	defer cache.Close()
+	renderer := NewTemplateRenderer(cache)
+
+	// Create mock tool manager with test tools
+	mockManager := &mockToolManager{
+		tools: make(map[string]ToolInterface),
+	}
+
+	validateTool := &mockTool{
+		name:        "validate-against-pattern",
+		description: "Validates code against documented architectural patterns",
+		schema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"code": map[string]interface{}{
+					"type":        "string",
+					"description": "Code to validate",
+					"maxLength":   float64(50000),
+				},
+				"pattern_name": map[string]interface{}{
+					"type":        "string",
+					"description": "Name of pattern to validate against",
+				},
+				"language": map[string]interface{}{
+					"type":        "string",
+					"description": "Programming language (optional)",
+				},
+			},
+			"required": []interface{}{"code", "pattern_name"},
+		},
+	}
+
+	searchTool := &mockTool{
+		name:        "search-architecture",
+		description: "Searches architectural documentation by keywords",
+		schema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"query": map[string]interface{}{
+					"type":        "string",
+					"description": "Search query",
+					"maxLength":   float64(500),
+				},
+				"resource_type": map[string]interface{}{
+					"type":        "string",
+					"description": "Filter by resource type",
+					"enum":        []interface{}{"guidelines", "patterns", "adr", "all"},
+				},
+			},
+			"required": []interface{}{"query"},
+		},
+	}
+
+	mockManager.tools["validate-against-pattern"] = validateTool
+	mockManager.tools["search-architecture"] = searchTool
+
+	renderer.SetToolManager(mockManager)
+
+	tests := []struct {
+		name     string
+		template string
+		wantErr  bool
+		validate func(*testing.T, string)
+	}{
+		{
+			name:     "embed single tool reference",
+			template: "Use this tool:\n\n{{tool:validate-against-pattern}}",
+			wantErr:  false,
+			validate: func(t *testing.T, result string) {
+				if !strings.Contains(result, "Tool: validate-against-pattern") {
+					t.Error("Result should contain tool name")
+				}
+				if !strings.Contains(result, "Validates code against documented architectural patterns") {
+					t.Error("Result should contain tool description")
+				}
+				if !strings.Contains(result, "code (required)") {
+					t.Error("Result should contain required parameter")
+				}
+				if !strings.Contains(result, "language (optional)") {
+					t.Error("Result should contain optional parameter")
+				}
+				if !strings.Contains(result, "max 50000 chars") {
+					t.Error("Result should contain parameter constraints")
+				}
+			},
+		},
+		{
+			name:     "embed tool with enum constraint",
+			template: "Search tool:\n\n{{tool:search-architecture}}",
+			wantErr:  false,
+			validate: func(t *testing.T, result string) {
+				if !strings.Contains(result, "Tool: search-architecture") {
+					t.Error("Result should contain tool name")
+				}
+				if !strings.Contains(result, "one of: guidelines, patterns, adr, all") {
+					t.Error("Result should contain enum constraint")
+				}
+			},
+		},
+		{
+			name:     "no tool references",
+			template: "This is a plain template without tools",
+			wantErr:  false,
+			validate: func(t *testing.T, result string) {
+				if result != "This is a plain template without tools" {
+					t.Errorf("Result should be unchanged, got: %s", result)
+				}
+			},
+		},
+		{
+			name:     "tool not found",
+			template: "{{tool:nonexistent-tool}}",
+			wantErr:  true,
+		},
+		{
+			name:     "multiple tool references",
+			template: "Tools:\n\n{{tool:validate-against-pattern}}\n\n{{tool:search-architecture}}",
+			wantErr:  false,
+			validate: func(t *testing.T, result string) {
+				if !strings.Contains(result, "validate-against-pattern") {
+					t.Error("Result should contain first tool")
+				}
+				if !strings.Contains(result, "search-architecture") {
+					t.Error("Result should contain second tool")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := renderer.EmbedTools(tt.template)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("EmbedTools() expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("EmbedTools() unexpected error = %v", err)
+				return
+			}
+			if tt.validate != nil {
+				tt.validate(t, got)
+			}
+		})
+	}
+}
+
+func TestEmbedToolsWithoutToolManager(t *testing.T) {
+	cache := cache.NewDocumentCache()
+	defer cache.Close()
+	renderer := NewTemplateRenderer(cache)
+
+	// Don't set tool manager - should return template unchanged
+	template := "{{tool:some-tool}}"
+	result, err := renderer.EmbedTools(template)
+	if err != nil {
+		t.Errorf("EmbedTools() without tool manager should not error, got: %v", err)
+	}
+	if result != template {
+		t.Errorf("EmbedTools() without tool manager should return unchanged template, got: %s", result)
+	}
+}
+
+func TestCombinedRenderingWithToolsAndResources(t *testing.T) {
+	cache := cache.NewDocumentCache()
+	defer cache.Close()
+
+	// Add test document
+	doc := &models.Document{
+		Metadata: models.DocumentMetadata{
+			Title:    "Test Pattern",
+			Category: "patterns",
+			Path:     config.PatternsPath + "/test-pattern.md",
+		},
+		Content: models.DocumentContent{
+			RawContent: "Pattern implementation details",
+		},
+	}
+	cache.Set(config.PatternsPath+"/test-pattern.md", doc)
+
+	renderer := NewTemplateRenderer(cache)
+
+	// Set up mock tool manager
+	mockManager := &mockToolManager{
+		tools: make(map[string]ToolInterface),
+	}
+	mockManager.tools["validate-pattern"] = &mockTool{
+		name:        "validate-pattern",
+		description: "Validates code",
+		schema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"code": map[string]interface{}{
+					"type":        "string",
+					"description": "Code to validate",
+				},
+			},
+			"required": []interface{}{"code"},
+		},
+	}
+	renderer.SetToolManager(mockManager)
+
+	// Template with variables, resources, and tools
+	template := `Review the following {{language}} code:
+
+` + "```{{language}}\n{{code}}\n```" + `
+
+Pattern reference:
+
+{{resource:architecture://patterns/*}}
+
+Validation tool:
+
+{{tool:validate-pattern}}`
+
+	args := map[string]interface{}{
+		"language": "go",
+		"code":     "func main() {}",
+	}
+
+	// Render in sequence: variables -> resources -> tools
+	rendered, err := renderer.RenderTemplate(template, args)
+	if err != nil {
+		t.Fatalf("RenderTemplate() error = %v", err)
+	}
+
+	withResources, err := renderer.EmbedResources(rendered)
+	if err != nil {
+		t.Fatalf("EmbedResources() error = %v", err)
+	}
+
+	final, err := renderer.EmbedTools(withResources)
+	if err != nil {
+		t.Fatalf("EmbedTools() error = %v", err)
+	}
+
+	// Validate final result contains all elements
+	if !strings.Contains(final, "go") {
+		t.Error("Final result should contain language variable")
+	}
+	if !strings.Contains(final, "func main()") {
+		t.Error("Final result should contain code variable")
+	}
+	if !strings.Contains(final, "Test Pattern") {
+		t.Error("Final result should contain embedded resource")
+	}
+	if !strings.Contains(final, "Tool: validate-pattern") {
+		t.Error("Final result should contain embedded tool")
+	}
+	if !strings.Contains(final, "Validates code") {
+		t.Error("Final result should contain tool description")
+	}
+}

@@ -116,8 +116,8 @@
   - Add circuit breaker integration for tool execution
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 5.4_
 
-- [ ] 10. Implement prompt-tool integration
-- [ ] 10.1 Add tool reference expansion to TemplateRenderer
+- [x] 10. Implement prompt-tool integration
+- [x] 10.1 Add tool reference expansion to TemplateRenderer
   - Extend EmbedResources() or create EmbedTools() method in `pkg/prompts/renderer.go`
   - Parse {{tool:tool-name}} syntax in prompt templates
   - Look up tool from ToolManager
@@ -125,21 +125,21 @@
   - Validate tool references on prompt load
   - _Requirements: 8.1, 8.2, 8.3, 8.5_
 
-- [ ] 10.2 Update PromptManager to support tool references
+- [x] 10.2 Update PromptManager to support tool references
   - Inject ToolManager dependency into PromptManager
   - Pass ToolManager to TemplateRenderer
   - Validate tool references during prompt loading
   - Log warnings for references to non-existent tools
   - _Requirements: 8.5_
 
-- [ ] 10.3 Create example prompt with tool integration
+- [x] 10.3 Create example prompt with tool integration
   - Create `mcp/prompts/guided-pattern-validation.json` demonstrating tool references
   - Include {{tool:validate-against-pattern}} reference
   - Add workflow instructions for using the tool
   - Test prompt rendering with tool expansion
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-- [ ]* 10.4 Implement workflow context management
+- [x] 10.4 Implement workflow context management
   - Create WorkflowContext struct in `pkg/tools/executor.go`
   - Add ExecuteWithContext() method to ToolExecutor
   - Allow tools to access prompt arguments and previous results
