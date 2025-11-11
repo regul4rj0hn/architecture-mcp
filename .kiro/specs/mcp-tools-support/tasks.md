@@ -146,7 +146,7 @@
   - Implement session-based context storage
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
 
-- [ ]* 11. Write integration tests
+- [x]* 11. Write integration tests
   - Test full tool invocation flow (initialize → tools/list → tools/call) in `internal/server/integration_test.go`
   - Test tool execution with real cache data
   - Test error handling across protocol layers
@@ -154,7 +154,7 @@
   - Test concurrent tool invocations
   - _Requirements: 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ]* 12. Write unit tests for core infrastructure
+- [x]* 12. Write unit tests for core infrastructure
   - Test ToolManager registration and lookup in `pkg/tools/manager_test.go`
   - Test ToolExecutor validation and execution in `pkg/tools/executor_test.go`
   - Test protocol handlers in `internal/server/handlers_test.go`

@@ -1140,3 +1140,765 @@ This document contains special characters: áéíóú, ñ, ç, ü
 		}
 	})
 }
+
+// TestToolsSystemIntegration tests the complete MCP tools functionality
+func TestToolsSystemIntegration(t *testing.T) {
+	// Create temporary directory structure with test documents
+	tempDir, err := os.MkdirTemp("", "mcp_tools_integration_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create mcp/resources subdirectories
+	guidelinesDir := filepath.Join(tempDir, "mcp", "resources", "guidelines")
+	patternsDir := filepath.Join(tempDir, "mcp", "resources", "patterns")
+	adrDir := filepath.Join(tempDir, "mcp", "resources", "adr")
+
+	for _, dir := range []string{guidelinesDir, patternsDir, adrDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", dir, err)
+		}
+	}
+
+	// Create test documents for tools to work with
+	testDocs := map[string]string{
+		filepath.Join(guidelinesDir, "api-design.md"): `# API Design Guidelines
+
+This document outlines the API design principles and best practices.
+
+## REST Principles
+- Use HTTP methods appropriately
+- Design resource-oriented URLs
+- Return appropriate status codes
+
+## Authentication
+- Use OAuth 2.0 for API authentication
+- Implement proper session management`,
+
+		filepath.Join(patternsDir, "repository-pattern.md"): `# Repository Pattern
+
+The repository pattern encapsulates data access logic.
+
+## Implementation
+- Define repository interfaces
+- Implement concrete repositories
+- Use dependency injection
+
+## Example Structure
+` + "```go\ntype Repository interface {\n    FindByID(id string) (*Entity, error)\n    Save(entity *Entity) error\n}\n```",
+
+		filepath.Join(adrDir, "001-microservices-architecture.md"): `# ADR-001: Use Microservices Architecture
+
+## Status
+Accepted
+
+## Context
+We need to choose an architecture pattern for our system that supports scalability and independent deployment.
+
+## Decision
+We will use a microservices architecture with domain-driven design principles.
+
+## Consequences
+- Better scalability
+- Independent deployment
+- Increased operational complexity`,
+
+		filepath.Join(adrDir, "002-use-postgresql.md"): `# ADR-002: Use PostgreSQL for Primary Database
+
+## Status
+Accepted
+
+## Context
+We need a reliable database for our application data with strong consistency guarantees.
+
+## Decision
+We will use PostgreSQL as our primary database for all transactional data.
+
+## Consequences
+- Strong ACID guarantees
+- Rich feature set
+- Mature ecosystem`,
+	}
+
+	for path, content := range testDocs {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write test file %s: %v", path, err)
+		}
+	}
+
+	// Change to temp directory for testing
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+	os.Chdir(tempDir)
+
+	// Create and initialize MCP server
+	server := NewMCPServer()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = server.initializeDocumentationSystem(ctx)
+	if err != nil {
+		t.Fatalf("Failed to initialize documentation system: %v", err)
+	}
+
+	err = server.initializeToolsSystem()
+	if err != nil {
+		t.Fatalf("Failed to initialize tools system: %v", err)
+	}
+
+	// Test 1: tools/list method integration
+	t.Run("ToolsListIntegration", func(t *testing.T) {
+		listMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "test-tools-list",
+			Method:  "tools/list",
+		}
+
+		response := server.handleToolsList(listMessage)
+
+		// Verify response structure
+		if response == nil {
+			t.Fatal("handleToolsList() returned nil")
+		}
+
+		if response.Error != nil {
+			t.Fatalf("Expected no error, got %v", response.Error)
+		}
+
+		result, ok := response.Result.(models.MCPToolsListResult)
+		if !ok {
+			t.Fatal("Expected result to be MCPToolsListResult")
+		}
+
+		// Should return all 3 built-in tools
+		if len(result.Tools) != 3 {
+			t.Errorf("Expected 3 tools, got %d", len(result.Tools))
+		}
+
+		// Verify tool names
+		expectedTools := map[string]bool{
+			"validate-against-pattern": false,
+			"search-architecture":      false,
+			"check-adr-alignment":      false,
+		}
+
+		for _, tool := range result.Tools {
+			// Verify required fields
+			if tool.Name == "" {
+				t.Error("Tool name should not be empty")
+			}
+			if tool.Description == "" {
+				t.Error("Tool description should not be empty")
+			}
+			if tool.InputSchema == nil {
+				t.Error("Tool inputSchema should not be nil")
+			}
+
+			// Mark tool as found
+			if _, exists := expectedTools[tool.Name]; exists {
+				expectedTools[tool.Name] = true
+			}
+
+			// Verify input schema structure
+			schema := tool.InputSchema
+			if schemaType, ok := schema["type"].(string); !ok || schemaType != "object" {
+				t.Errorf("Tool %s schema type should be 'object'", tool.Name)
+			}
+			if _, ok := schema["properties"]; !ok {
+				t.Errorf("Tool %s schema should have 'properties'", tool.Name)
+			}
+		}
+
+		// Verify all expected tools were found
+		for toolName, found := range expectedTools {
+			if !found {
+				t.Errorf("Expected tool '%s' not found in list", toolName)
+			}
+		}
+	})
+
+	// Test 2: validate-against-pattern tool invocation
+	t.Run("ValidatePatternToolIntegration", func(t *testing.T) {
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "test-validate-pattern",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "validate-against-pattern",
+				Arguments: map[string]interface{}{
+					"code": `type UserRepository struct {
+    db *sql.DB
+}
+
+func (r *UserRepository) FindByID(id string) (*User, error) {
+    // Implementation
+    return nil, nil
+}`,
+					"pattern_name": "repository-pattern",
+					"language":     "go",
+				},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		if response == nil {
+			t.Fatal("handleToolsCall() returned nil")
+		}
+
+		if response.Error != nil {
+			t.Fatalf("Expected no error, got %v", response.Error)
+		}
+
+		result, ok := response.Result.(models.MCPToolsCallResult)
+		if !ok {
+			t.Fatal("Expected result to be MCPToolsCallResult")
+		}
+
+		if len(result.Content) == 0 {
+			t.Fatal("Expected at least one content item")
+		}
+
+		content := result.Content[0]
+		if content.Type != "text" {
+			t.Errorf("Expected content type 'text', got '%s'", content.Type)
+		}
+
+		// Verify result contains validation information
+		if !strings.Contains(content.Text, "compliant") && !strings.Contains(content.Text, "pattern") {
+			t.Error("Result should contain validation information")
+		}
+	})
+
+	// Test 3: search-architecture tool invocation
+	t.Run("SearchArchitectureToolIntegration", func(t *testing.T) {
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "test-search-architecture",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "search-architecture",
+				Arguments: map[string]interface{}{
+					"query":         "API authentication",
+					"resource_type": "all",
+					"max_results":   10,
+				},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		if response == nil {
+			t.Fatal("handleToolsCall() returned nil")
+		}
+
+		if response.Error != nil {
+			t.Fatalf("Expected no error, got %v", response.Error)
+		}
+
+		result, ok := response.Result.(models.MCPToolsCallResult)
+		if !ok {
+			t.Fatal("Expected result to be MCPToolsCallResult")
+		}
+
+		if len(result.Content) == 0 {
+			t.Fatal("Expected at least one content item")
+		}
+
+		content := result.Content[0]
+		if content.Type != "text" {
+			t.Errorf("Expected content type 'text', got '%s'", content.Type)
+		}
+
+		// Verify result contains search results
+		if !strings.Contains(content.Text, "results") || !strings.Contains(content.Text, "uri") {
+			t.Error("Result should contain search results with URIs")
+		}
+	})
+
+	// Test 4: check-adr-alignment tool invocation
+	t.Run("CheckADRAlignmentToolIntegration", func(t *testing.T) {
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "test-check-adr-alignment",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "check-adr-alignment",
+				Arguments: map[string]interface{}{
+					"decision_description": "We should use MongoDB for our new analytics service",
+					"decision_context":     "Need a database for storing analytics data with flexible schema",
+				},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		if response == nil {
+			t.Fatal("handleToolsCall() returned nil")
+		}
+
+		if response.Error != nil {
+			t.Fatalf("Expected no error, got %v", response.Error)
+		}
+
+		result, ok := response.Result.(models.MCPToolsCallResult)
+		if !ok {
+			t.Fatal("Expected result to be MCPToolsCallResult")
+		}
+
+		if len(result.Content) == 0 {
+			t.Fatal("Expected at least one content item")
+		}
+
+		content := result.Content[0]
+		if content.Type != "text" {
+			t.Errorf("Expected content type 'text', got '%s'", content.Type)
+		}
+
+		// Verify result contains alignment analysis
+		if !strings.Contains(content.Text, "related_adrs") || !strings.Contains(content.Text, "alignment") {
+			t.Error("Result should contain ADR alignment analysis")
+		}
+	})
+
+	// Test 5: Tool error handling - invalid tool name
+	t.Run("InvalidToolNameError", func(t *testing.T) {
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "test-invalid-tool",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name:      "nonexistent-tool",
+				Arguments: map[string]interface{}{},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		if response.Error == nil {
+			t.Error("Expected error for invalid tool name")
+		}
+
+		// Tool not found returns -32602 (invalid params) in current implementation
+		if response.Error.Code != -32602 {
+			t.Errorf("Expected error code -32602, got %d", response.Error.Code)
+		}
+
+		if !strings.Contains(response.Error.Message, "not found") && !strings.Contains(response.Error.Message, "Tool") {
+			t.Errorf("Expected error message about tool not found, got '%s'", response.Error.Message)
+		}
+	})
+
+	// Test 6: Tool error handling - missing required arguments
+	t.Run("MissingRequiredArgumentsError", func(t *testing.T) {
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "test-missing-args",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "validate-against-pattern",
+				Arguments: map[string]interface{}{
+					// Missing required 'code' and 'pattern_name' arguments
+					"language": "go",
+				},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		if response.Error == nil {
+			t.Error("Expected error for missing required arguments")
+		}
+
+		// Tool execution errors return -32603 in current implementation
+		if response.Error.Code != -32603 && response.Error.Code != -32602 {
+			t.Errorf("Expected error code -32602 or -32603, got %d", response.Error.Code)
+		}
+	})
+
+	// Test 7: Tool error handling - invalid argument types
+	t.Run("InvalidArgumentTypesError", func(t *testing.T) {
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "test-invalid-arg-types",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "search-architecture",
+				Arguments: map[string]interface{}{
+					"query":         "test query",
+					"max_results":   "not-a-number", // Should be integer
+					"resource_type": "all",
+				},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		if response.Error == nil {
+			t.Error("Expected error for invalid argument types")
+		}
+
+		if response.Error.Code != -32602 {
+			t.Errorf("Expected error code -32602, got %d", response.Error.Code)
+		}
+	})
+
+	// Test 8: Tool execution with real cache data
+	t.Run("ToolExecutionWithRealCacheData", func(t *testing.T) {
+		// Verify cache has documents
+		if server.cache.Size() == 0 {
+			t.Fatal("Cache should have documents for this test")
+		}
+
+		// Search for a term that should be in the documents
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "test-real-cache-search",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "search-architecture",
+				Arguments: map[string]interface{}{
+					"query":         "microservices",
+					"resource_type": "adr",
+					"max_results":   5,
+				},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		if response.Error != nil {
+			t.Fatalf("Expected no error, got %v", response.Error)
+		}
+
+		result := response.Result.(models.MCPToolsCallResult)
+		content := result.Content[0]
+
+		// Should find the microservices ADR
+		if !strings.Contains(content.Text, "microservices") {
+			t.Error("Search should find microservices-related content")
+		}
+	})
+
+	// Test 9: Concurrent tool invocations
+	t.Run("ConcurrentToolInvocations", func(t *testing.T) {
+		const numConcurrent = 10
+		done := make(chan bool, numConcurrent)
+		errors := make(chan error, numConcurrent)
+
+		for i := 0; i < numConcurrent; i++ {
+			go func(index int) {
+				callMessage := &models.MCPMessage{
+					JSONRPC: "2.0",
+					ID:      fmt.Sprintf("concurrent-test-%d", index),
+					Method:  "tools/call",
+					Params: models.MCPToolsCallParams{
+						Name: "search-architecture",
+						Arguments: map[string]interface{}{
+							"query":         "API",
+							"resource_type": "all",
+							"max_results":   5,
+						},
+					},
+				}
+
+				response := server.handleToolsCall(callMessage)
+
+				if response.Error != nil {
+					errors <- fmt.Errorf("concurrent call %d failed: %v", index, response.Error)
+				}
+
+				done <- true
+			}(i)
+		}
+
+		// Wait for all goroutines to complete
+		for i := 0; i < numConcurrent; i++ {
+			select {
+			case <-done:
+				// Success
+			case err := <-errors:
+				t.Error(err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("Concurrent tool invocations timed out")
+			}
+		}
+	})
+
+	// Test 10: Full workflow - initialize, list, call multiple tools
+	t.Run("FullToolsWorkflow", func(t *testing.T) {
+		// Step 1: List available tools
+		listMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "workflow-list",
+			Method:  "tools/list",
+		}
+
+		listResponse := server.handleToolsList(listMessage)
+		if listResponse.Error != nil {
+			t.Fatalf("List tools failed: %v", listResponse.Error)
+		}
+
+		listResult := listResponse.Result.(models.MCPToolsListResult)
+		if len(listResult.Tools) == 0 {
+			t.Fatal("No tools available")
+		}
+
+		// Step 2: Search for relevant documentation
+		searchMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "workflow-search",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "search-architecture",
+				Arguments: map[string]interface{}{
+					"query":         "repository",
+					"resource_type": "pattern",
+					"max_results":   5,
+				},
+			},
+		}
+
+		searchResponse := server.handleToolsCall(searchMessage)
+		if searchResponse.Error != nil {
+			t.Fatalf("Search tool failed: %v", searchResponse.Error)
+		}
+
+		// Step 3: Validate code against found pattern
+		validateMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "workflow-validate",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "validate-against-pattern",
+				Arguments: map[string]interface{}{
+					"code":         "type Repository interface { FindByID(id string) error }",
+					"pattern_name": "repository-pattern",
+					"language":     "go",
+				},
+			},
+		}
+
+		validateResponse := server.handleToolsCall(validateMessage)
+		if validateResponse.Error != nil {
+			t.Fatalf("Validate tool failed: %v", validateResponse.Error)
+		}
+
+		// Step 4: Check ADR alignment for a decision
+		adrMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "workflow-adr",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "check-adr-alignment",
+				Arguments: map[string]interface{}{
+					"decision_description": "Use microservices for new features",
+				},
+			},
+		}
+
+		adrResponse := server.handleToolsCall(adrMessage)
+		if adrResponse.Error != nil {
+			t.Fatalf("ADR alignment tool failed: %v", adrResponse.Error)
+		}
+
+		// All steps completed successfully
+		t.Log("Full workflow completed successfully")
+	})
+}
+
+// TestToolsProtocolComplianceIntegration tests MCP protocol compliance for tools
+func TestToolsProtocolComplianceIntegration(t *testing.T) {
+	server := NewMCPServer()
+
+	// Initialize tools system
+	err := server.initializeToolsSystem()
+	if err != nil {
+		t.Fatalf("Failed to initialize tools system: %v", err)
+	}
+
+	// Test 1: JSON-RPC 2.0 compliance for tools/list
+	t.Run("ToolsListJSONRPCCompliance", func(t *testing.T) {
+		listMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "compliance-tools-list",
+			Method:  "tools/list",
+		}
+
+		response := server.handleToolsList(listMessage)
+
+		// Verify JSON-RPC 2.0 compliance
+		if response.JSONRPC != "2.0" {
+			t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
+		}
+
+		if response.ID != "compliance-tools-list" {
+			t.Errorf("Expected ID 'compliance-tools-list', got '%v'", response.ID)
+		}
+
+		// Should have either result or error, but not both
+		if response.Result != nil && response.Error != nil {
+			t.Error("Response should not have both result and error")
+		}
+
+		if response.Result == nil && response.Error == nil {
+			t.Error("Response should have either result or error")
+		}
+	})
+
+	// Test 2: MCP tool structure compliance
+	t.Run("MCPToolStructureCompliance", func(t *testing.T) {
+		listMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "structure-compliance",
+			Method:  "tools/list",
+		}
+
+		response := server.handleToolsList(listMessage)
+
+		result, ok := response.Result.(models.MCPToolsListResult)
+		if !ok {
+			t.Fatal("Expected result to be MCPToolsListResult")
+		}
+
+		if len(result.Tools) == 0 {
+			t.Fatal("Expected at least one tool")
+		}
+
+		for _, tool := range result.Tools {
+			// Verify required MCP tool fields
+			if tool.Name == "" {
+				t.Error("Tool name is required")
+			}
+
+			// Description is optional but should be present for usability
+			if tool.Description == "" {
+				t.Error("Tool description should be present")
+			}
+
+			// InputSchema is required
+			if tool.InputSchema == nil {
+				t.Error("Tool inputSchema is required")
+			}
+
+			// Verify schema structure
+			schema := tool.InputSchema
+			if schemaType, ok := schema["type"]; !ok {
+				t.Error("Tool schema should have 'type' field")
+			} else if schemaType != "object" {
+				t.Errorf("Tool schema type should be 'object', got '%v'", schemaType)
+			}
+
+			if _, ok := schema["properties"]; !ok {
+				t.Error("Tool schema should have 'properties' field")
+			}
+		}
+	})
+
+	// Test 3: MCP tool call result compliance
+	t.Run("MCPToolCallResultCompliance", func(t *testing.T) {
+		// Initialize cache with test data
+		server.cache.Set("test-doc", &models.Document{
+			Metadata: models.DocumentMetadata{
+				Title:    "Test",
+				Category: "guideline",
+				Path:     "test.md",
+			},
+			Content: models.DocumentContent{
+				RawContent: "Test content",
+			},
+		})
+
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "call-compliance",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name: "search-architecture",
+				Arguments: map[string]interface{}{
+					"query": "test",
+				},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		if response.Error != nil {
+			t.Fatalf("Expected no error, got %v", response.Error)
+		}
+
+		result, ok := response.Result.(models.MCPToolsCallResult)
+		if !ok {
+			t.Fatal("Expected result to be MCPToolsCallResult")
+		}
+
+		// Verify content array structure
+		if result.Content == nil {
+			t.Fatal("Tool result content should not be nil")
+		}
+
+		if len(result.Content) == 0 {
+			t.Fatal("Tool result should have at least one content item")
+		}
+
+		for _, content := range result.Content {
+			// Verify required content fields
+			if content.Type == "" {
+				t.Error("Content type is required")
+			}
+
+			// Verify valid content types
+			validTypes := map[string]bool{"text": true, "image": true, "resource": true}
+			if !validTypes[content.Type] {
+				t.Errorf("Invalid content type '%s'", content.Type)
+			}
+
+			// For text type, text field should be present
+			if content.Type == "text" && content.Text == "" {
+				t.Error("Text content should have non-empty text field")
+			}
+		}
+	})
+
+	// Test 4: Error response compliance for tools
+	t.Run("ToolsErrorResponseCompliance", func(t *testing.T) {
+		callMessage := &models.MCPMessage{
+			JSONRPC: "2.0",
+			ID:      "error-compliance",
+			Method:  "tools/call",
+			Params: models.MCPToolsCallParams{
+				Name:      "nonexistent-tool",
+				Arguments: map[string]interface{}{},
+			},
+		}
+
+		response := server.handleToolsCall(callMessage)
+
+		// Verify error response structure
+		if response.Error == nil {
+			t.Fatal("Expected error response")
+		}
+
+		// Verify required error fields
+		if response.Error.Code == 0 {
+			t.Error("Error code is required")
+		}
+		if response.Error.Message == "" {
+			t.Error("Error message is required")
+		}
+
+		// Verify JSON-RPC 2.0 compliance for errors
+		if response.JSONRPC != "2.0" {
+			t.Errorf("Expected JSONRPC '2.0' in error response, got '%s'", response.JSONRPC)
+		}
+		if response.ID != "error-compliance" {
+			t.Errorf("Expected ID 'error-compliance' in error response, got '%v'", response.ID)
+		}
+
+		// Should not have result field in error response
+		if response.Result != nil {
+			t.Error("Error response should not have result field")
+		}
+	})
+}
