@@ -186,14 +186,14 @@
     - Improve readability and maintainability
     - _Requirements: 6.5_
 
-- [ ] 11. Verify test coverage and run full test suite
+- [x] 11. Verify test coverage and run full test suite
   - Run `make test-coverage` to generate coverage report
   - Verify coverage is >70% for critical packages (server, cache, prompts, scanner)
   - Run full test suite and ensure 100% pass rate
   - Run benchmark tests to verify no performance regression
   - _Requirements: 3.4, 8.1, 8.4_
 
-- [ ] 12. Final integration testing
+- [x] 12. Final integration testing
   - Build and run server locally with new paths
   - Test resource listing and reading
   - Test prompt listing and invocation

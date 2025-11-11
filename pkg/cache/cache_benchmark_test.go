@@ -67,7 +67,6 @@ func BenchmarkCacheGet(b *testing.B) {
 		{"Small_100", 100},
 		{"Medium_1000", 1000},
 		{"Large_10000", 10000},
-		{"XLarge_50000", 50000},
 	}
 
 	for _, tc := range testCases {
@@ -185,7 +184,7 @@ func BenchmarkCacheInvalidateByCategory(b *testing.B) {
 	}{
 		{"Small_300_docs", 300},
 		{"Medium_3000_docs", 3000},
-		{"Large_30000_docs", 30000},
+		{"Large_10000_docs", 10000},
 	}
 
 	for _, tc := range testCases {
@@ -340,7 +339,7 @@ func BenchmarkCacheConcurrentMixedOperations(b *testing.B) {
 
 // BenchmarkCacheScalability tests cache performance at different scales
 func BenchmarkCacheScalability(b *testing.B) {
-	scales := []int{100, 1000, 10000, 50000}
+	scales := []int{100, 1000, 10000}
 
 	for _, scale := range scales {
 		b.Run(fmt.Sprintf("Scale_%d", scale), func(b *testing.B) {

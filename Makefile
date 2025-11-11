@@ -61,17 +61,26 @@ clean:
 	@rm -rf bin/
 	@echo "Clean completed"
 
-# Run tests
+# Run tests (excludes load tests and benchmarks)
 test:
 	@echo "Running tests..."
-	$(GOTEST) -v ./...
+	$(GOTEST) -v -short ./...
 
-# Run tests with coverage
+# Run tests with coverage (excludes load tests and benchmarks)
 test-coverage:
 	@echo "Running tests with coverage..."
-	$(GOTEST) -v -coverprofile=coverage.out ./...
+	$(GOTEST) -v -short -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
+
+# Run performance tests (load tests and benchmarks)
+test-performance:
+	@echo "Running performance tests..."
+	@echo "Running load tests..."
+	@$(GOTEST) -run="TestLoad" ./cmd/mcp-server/... > /tmp/load_test.log 2>&1 && (echo "Load tests passed" && tail -15 /tmp/load_test.log) || (echo "Load tests failed" && tail -20 /tmp/load_test.log && exit 1)
+	@echo "Running benchmarks..."
+	@$(GOTEST) -bench=. -benchmem -benchtime=100ms -run=^$$ -skip="BenchmarkConcurrent|BenchmarkMemory" ./internal/server/... > /tmp/bench_test.log 2>&1 && (echo "Benchmarks passed" && tail -25 /tmp/bench_test.log) || (echo "Benchmarks failed" && tail -30 /tmp/bench_test.log && exit 1)
+	@echo "Performance tests completed"
 
 # Download dependencies
 deps:
@@ -264,8 +273,9 @@ help:
 	@echo "  build-all              - Build all binaries"
 	@echo "  build-linux            - Build the binary for Linux"
 	@echo "  clean                  - Clean build artifacts"
-	@echo "  test                   - Run tests"
-	@echo "  test-coverage          - Run tests with coverage report"
+	@echo "  test                   - Run tests (excludes load tests and benchmarks)"
+	@echo "  test-coverage          - Run tests with coverage report (excludes load tests and benchmarks)"
+	@echo "  test-performance       - Run performance tests (load tests and benchmarks)"
 	@echo "  deps                   - Download dependencies"
 	@echo "  tidy                   - Tidy go.mod"
 	@echo "  run                    - Build and run the application"

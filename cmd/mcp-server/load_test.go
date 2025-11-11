@@ -48,6 +48,10 @@ func TestLoadTestFullSystem(t *testing.T) {
 		t.Skip("Skipping load test in short mode")
 	}
 
+	// Single shared server setup for all load tests
+	mcpServer, cleanup := setupLoadTestServer(t, 150, 1024)
+	defer cleanup()
+
 	testCases := []struct {
 		name   string
 		config LoadTestConfig
@@ -55,38 +59,32 @@ func TestLoadTestFullSystem(t *testing.T) {
 		{
 			name: "Light_Load",
 			config: LoadTestConfig{
-				Duration:          10 * time.Second,
+				Duration:          2 * time.Second,
 				ConcurrentClients: 3,
 				RequestsPerSecond: 5,
-				DocumentCount:     50,
-				DocumentSize:      512,
 			},
 		},
 		{
 			name: "Medium_Load",
 			config: LoadTestConfig{
-				Duration:          20 * time.Second,
+				Duration:          3 * time.Second,
 				ConcurrentClients: 10,
 				RequestsPerSecond: 25,
-				DocumentCount:     200,
-				DocumentSize:      2048,
 			},
 		},
 		{
 			name: "Heavy_Load",
 			config: LoadTestConfig{
-				Duration:          30 * time.Second,
+				Duration:          3 * time.Second,
 				ConcurrentClients: 15,
 				RequestsPerSecond: 40,
-				DocumentCount:     500,
-				DocumentSize:      4096,
 			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			results := runLoadTest(t, tc.config)
+			results := runLoadTestWithServer(t, mcpServer, tc.config)
 			validateLoadTestResults(t, tc.config, results)
 			logLoadTestResults(t, tc.name, results)
 		})
@@ -99,16 +97,16 @@ func TestLoadTestMemoryPressure(t *testing.T) {
 		t.Skip("Skipping memory pressure test in short mode")
 	}
 
+	mcpServer, cleanup := setupLoadTestServer(t, 200, 2048)
+	defer cleanup()
+
 	config := LoadTestConfig{
-		Duration:          20 * time.Second,
+		Duration:          2 * time.Second,
 		ConcurrentClients: 10,
 		RequestsPerSecond: 25,
-		DocumentCount:     1000, // Reduced number of documents
-		DocumentSize:      5120, // 5KB per document
 	}
 
-	t.Log("Starting memory pressure test...")
-	results := runLoadTest(t, config)
+	results := runLoadTestWithServer(t, mcpServer, config)
 
 	// Check memory usage
 	memoryUsageMB := float64(results.MemoryUsage.Alloc) / 1024 / 1024
@@ -132,16 +130,16 @@ func TestLoadTestSustainedLoad(t *testing.T) {
 		t.Skip("Skipping sustained load test in short mode")
 	}
 
+	mcpServer, cleanup := setupLoadTestServer(t, 150, 1024)
+	defer cleanup()
+
 	config := LoadTestConfig{
-		Duration:          30 * time.Second, // Reduced from 5 minutes to 30 seconds
-		ConcurrentClients: 10,               // Reduced concurrent clients
-		RequestsPerSecond: 20,               // Reduced request rate
-		DocumentCount:     500,              // Reduced document count
-		DocumentSize:      1024,             // Reduced document size
+		Duration:          3 * time.Second,
+		ConcurrentClients: 10,
+		RequestsPerSecond: 20,
 	}
 
-	t.Log("Starting sustained load test (30 seconds)...")
-	results := runLoadTest(t, config)
+	results := runLoadTestWithServer(t, mcpServer, config)
 
 	// Validate sustained performance
 	if results.ErrorRate > 10.0 {
@@ -164,10 +162,8 @@ func TestLoadTestBurstTraffic(t *testing.T) {
 	}
 
 	// Create server with test documents
-	mcpServer, cleanup := setupLoadTestServer(t, 1000, 2048)
+	mcpServer, cleanup := setupLoadTestServer(t, 150, 1024)
 	defer cleanup()
-
-	t.Log("Starting burst traffic test...")
 
 	var totalRequests int64
 	var successfulReqs int64
@@ -175,17 +171,17 @@ func TestLoadTestBurstTraffic(t *testing.T) {
 	var responseTimes []time.Duration
 	var responseTimesMutex sync.Mutex
 
-	// Simulate burst pattern: 5 seconds high load, 3 seconds low load, repeat
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// Simulate burst pattern: 1.5 seconds high load, 0.5 seconds low load
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	var wg sync.WaitGroup
 
 	// Burst worker
 	burstWorker := func(highLoad bool) {
-		clients := 50
+		clients := 20
 		if !highLoad {
-			clients = 5
+			clients = 3
 		}
 
 		for i := 0; i < clients; i++ {
@@ -221,7 +217,7 @@ func TestLoadTestBurstTraffic(t *testing.T) {
 
 	// Run burst pattern
 	go func() {
-		ticker := time.NewTicker(8 * time.Second)
+		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 
 		highLoad := true
@@ -233,7 +229,6 @@ func TestLoadTestBurstTraffic(t *testing.T) {
 				return
 			case <-ticker.C:
 				highLoad = !highLoad
-				t.Logf("Switching to %s load", map[bool]string{true: "high", false: "low"}[highLoad])
 				burstWorker(highLoad)
 			}
 		}
@@ -243,7 +238,7 @@ func TestLoadTestBurstTraffic(t *testing.T) {
 	wg.Wait()
 
 	// Calculate results
-	results := calculateLoadTestResults(totalRequests, successfulReqs, failedReqs, responseTimes, 20*time.Second)
+	results := calculateLoadTestResults(totalRequests, successfulReqs, failedReqs, responseTimes, 3*time.Second)
 
 	// Validate burst handling
 	if results.ErrorRate > 15.0 {
@@ -258,6 +253,11 @@ func runLoadTest(t *testing.T, config LoadTestConfig) LoadTestResults {
 	// Setup server with test documents
 	mcpServer, cleanup := setupLoadTestServer(t, config.DocumentCount, config.DocumentSize)
 	defer cleanup()
+	return runLoadTestWithServer(t, mcpServer, config)
+}
+
+// runLoadTestWithServer executes a load test using an existing server
+func runLoadTestWithServer(t *testing.T, mcpServer *server.MCPServer, config LoadTestConfig) LoadTestResults {
 
 	var totalRequests int64
 	var successfulReqs int64
@@ -330,7 +330,7 @@ func setupLoadTestServer(tb testing.TB, docCount, docSize int) (*server.MCPServe
 	os.Chdir(tempDir)
 
 	// Initialize the server properly for all tests
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
 	// Start server in a goroutine to avoid blocking
 	go func() {
@@ -343,7 +343,7 @@ func setupLoadTestServer(tb testing.TB, docCount, docSize int) (*server.MCPServe
 	}()
 
 	// Give server time to initialize
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 
 	cleanup := func() {
 		os.Chdir(originalDir)

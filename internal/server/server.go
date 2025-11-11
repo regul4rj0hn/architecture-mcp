@@ -51,6 +51,12 @@ type MCPServer struct {
 
 // NewMCPServer creates a new MCP server instance
 func NewMCPServer() *MCPServer {
+	return newMCPServerWithOptions(true)
+}
+
+// newMCPServerWithOptions creates a new MCP server with optional components
+// enableMonitor controls whether file system monitoring is enabled (disabled for benchmarks)
+func newMCPServerWithOptions(enableMonitor bool) *MCPServer {
 	// Initialize documentation system components
 	docCache := cache.NewDocumentCache()
 	docScanner := scanner.NewDocumentationScanner(".")
@@ -70,14 +76,18 @@ func NewMCPServer() *MCPServer {
 		degradationManager.RegisterComponent(rule)
 	}
 
-	fileMonitor, err := monitor.NewFileSystemMonitor()
-	if err != nil {
-		loggingManager.LogError("server", err, "Failed to create file system monitor", map[string]interface{}{
-			"component": "file_monitor",
-		})
-		fileMonitor = nil
-		// Record error for degradation management
-		degradationManager.RecordError(errors.ComponentFileSystemMonitoring, err)
+	var fileMonitor *monitor.FileSystemMonitor
+	if enableMonitor {
+		var err error
+		fileMonitor, err = monitor.NewFileSystemMonitor()
+		if err != nil {
+			loggingManager.LogError("server", err, "Failed to create file system monitor", map[string]interface{}{
+				"component": "file_monitor",
+			})
+			fileMonitor = nil
+			// Record error for degradation management
+			degradationManager.RecordError(errors.ComponentFileSystemMonitoring, err)
+		}
 	}
 
 	// Initialize prompt manager

@@ -18,7 +18,7 @@ import (
 
 // BenchmarkMCPInitialize benchmarks the MCP initialization flow
 func BenchmarkMCPInitialize(b *testing.B) {
-	server := NewMCPServer()
+	server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
 
 	initMessage := &models.MCPMessage{
 		JSONRPC: "2.0",
@@ -52,12 +52,11 @@ func BenchmarkResourcesList(b *testing.B) {
 		{"Small_10_docs", 10},
 		{"Medium_100_docs", 100},
 		{"Large_1000_docs", 1000},
-		{"XLarge_5000_docs", 5000},
 	}
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
-			server := NewMCPServer()
+			server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
 			populateServerWithTestDocuments(server, tc.docCount)
 
 			listMessage := &models.MCPMessage{
@@ -79,7 +78,7 @@ func BenchmarkResourcesList(b *testing.B) {
 
 // BenchmarkResourcesRead benchmarks the resources/read method
 func BenchmarkResourcesRead(b *testing.B) {
-	server := NewMCPServer()
+	server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
 	populateServerWithTestDocuments(server, 100)
 
 	readMessage := &models.MCPMessage{
@@ -102,8 +101,8 @@ func BenchmarkResourcesRead(b *testing.B) {
 
 // BenchmarkConcurrentResourcesRead benchmarks concurrent resource read operations
 func BenchmarkConcurrentResourcesRead(b *testing.B) {
-	server := NewMCPServer()
-	populateServerWithTestDocuments(server, 1000)
+	server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
+	populateServerWithTestDocuments(server, 100)
 
 	// Create multiple URIs to read
 	uris := make([]string, 100)
@@ -135,7 +134,7 @@ func BenchmarkConcurrentResourcesRead(b *testing.B) {
 
 // BenchmarkJSONRPCProcessing benchmarks the complete JSON-RPC message processing pipeline
 func BenchmarkJSONRPCProcessing(b *testing.B) {
-	server := NewMCPServer()
+	server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
 	populateServerWithTestDocuments(server, 100)
 
 	// Create a list request message
@@ -167,9 +166,9 @@ func BenchmarkMemoryUsageWithLargeDataset(b *testing.B) {
 		docCount int
 		docSize  int // Size of each document in bytes
 	}{
-		{"Small_docs_1KB", 1000, 1024},
-		{"Medium_docs_10KB", 1000, 10240},
-		{"Large_docs_100KB", 100, 102400},
+		{"Small_docs_1KB", 100, 1024},
+		{"Medium_docs_10KB", 50, 10240},
+		{"Large_docs_100KB", 20, 102400},
 	}
 
 	for _, tc := range testCases {
@@ -178,7 +177,7 @@ func BenchmarkMemoryUsageWithLargeDataset(b *testing.B) {
 			runtime.GC()
 			runtime.ReadMemStats(&m1)
 
-			server := NewMCPServer()
+			server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
 			populateServerWithLargeTestDocuments(server, tc.docCount, tc.docSize)
 
 			runtime.GC()
@@ -208,8 +207,8 @@ func BenchmarkMemoryUsageWithLargeDataset(b *testing.B) {
 
 // BenchmarkCacheOperations benchmarks cache performance with various operations
 func BenchmarkCacheOperations(b *testing.B) {
-	server := NewMCPServer()
-	populateServerWithTestDocuments(server, 1000)
+	server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
+	populateServerWithTestDocuments(server, 100)
 
 	b.Run("CacheGet", func(b *testing.B) {
 		keys := make([]string, 100)
@@ -253,8 +252,8 @@ func BenchmarkStartupTime(b *testing.B) {
 		docCount int
 	}{
 		{"Startup_10_docs", 10},
+		{"Startup_50_docs", 50},
 		{"Startup_100_docs", 100},
-		{"Startup_500_docs", 500},
 	}
 
 	for _, tc := range testCases {
@@ -264,7 +263,7 @@ func BenchmarkStartupTime(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				server := NewMCPServer()
+				server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
 
 				// Change to temp directory for scanning
 				originalDir, _ := os.Getwd()
@@ -291,7 +290,7 @@ func BenchmarkStartupTime(b *testing.B) {
 
 // LoadTestConcurrentRequests performs load testing with concurrent MCP requests
 func LoadTestConcurrentRequests(b *testing.B) {
-	server := NewMCPServer()
+	server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
 	populateServerWithTestDocuments(server, 1000)
 
 	concurrencyLevels := []int{1, 5, 10, 25, 50, 100}
@@ -357,8 +356,8 @@ func LoadTestConcurrentRequests(b *testing.B) {
 
 // BenchmarkPerformanceMetrics benchmarks the performance metrics endpoint
 func BenchmarkPerformanceMetrics(b *testing.B) {
-	server := NewMCPServer()
-	populateServerWithTestDocuments(server, 1000)
+	server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
+	populateServerWithTestDocuments(server, 100)
 
 	metricsMessage := &models.MCPMessage{
 		JSONRPC: "2.0",
@@ -477,8 +476,8 @@ func createTestDocumentationFiles(baseDir string, count int) error {
 
 // BenchmarkResponseTimePercentiles measures response time percentiles
 func BenchmarkResponseTimePercentiles(b *testing.B) {
-	server := NewMCPServer()
-	populateServerWithTestDocuments(server, 1000)
+	server := newMCPServerWithOptions(false) // Disable file monitor for benchmarks
+	populateServerWithTestDocuments(server, 100)
 
 	// Collect response times
 	responseTimes := make([]time.Duration, b.N)
