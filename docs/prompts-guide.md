@@ -6,7 +6,7 @@ Prompts are interactive templates that combine instructions with architectural d
 
 ## Prompt Definition Format
 
-Prompts are defined as JSON files in the `prompts/` directory. Each prompt file must follow this structure:
+Prompts are defined as JSON files in the `mcp/prompts/` directory. Each prompt file must follow this structure:
 
 ```json
 {
@@ -114,7 +114,7 @@ Embed all matching resources:
 {{resource:architecture://patterns/*}}
 ```
 
-This will embed all files from `docs/patterns/` directory.
+This will embed all files from `mcp/resources/patterns/` directory.
 
 #### Resource Embedding Behavior
 
@@ -240,14 +240,14 @@ Combine instructions, argument placeholders, and resource embeddings:
 
 ### Step 5: Save and Test
 
-1. Save the file as `prompts/my-custom-prompt.json`
+1. Save the file as `mcp/prompts/my-custom-prompt.json`
 2. The server will automatically reload within 2 seconds
 3. Test with `prompts/list` to verify it appears
 4. Test with `prompts/get` to verify rendering
 
 ## Hot Reload
 
-The server monitors the `prompts/` directory for changes:
+The server monitors the `mcp/prompts/` directory for changes:
 
 - **Add**: New prompt files are automatically loaded
 - **Modify**: Updated prompts are reloaded
@@ -407,7 +407,7 @@ The server includes three built-in prompts as examples:
 2. **suggest-patterns** - Pattern recommendation
 3. **create-adr** - ADR creation assistance
 
-Review these files in `prompts/` for working examples.
+Review these files in `mcp/prompts/` for working examples.
 
 ### Related Documentation
 

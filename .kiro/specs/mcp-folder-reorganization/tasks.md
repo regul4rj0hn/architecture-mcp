@@ -128,30 +128,30 @@
     - Test resource listing and prompt invocation in container
     - _Requirements: 4.4_
 
-- [ ] 9. Update documentation files
-  - [ ] 9.1 Update README.md
+- [x] 9. Update documentation files
+  - [x] 9.1 Update README.md
     - Update directory structure diagram to show mcp/ organization
     - Update example commands and paths
     - Update MCP configuration examples with new paths
     - _Requirements: 5.1_
   
-  - [ ] 9.2 Update .kiro/steering/product.md
+  - [x] 9.2 Update .kiro/steering/product.md
     - Update resource URI documentation to reference mcp/resources/
     - Update prompts directory references to mcp/prompts/
     - Update caching and monitoring documentation
     - _Requirements: 5.2_
   
-  - [ ] 9.3 Update .kiro/steering/structure.md
+  - [x] 9.3 Update .kiro/steering/structure.md
     - Update directory structure diagram
     - Update package organization documentation
     - _Requirements: 5.2_
   
-  - [ ] 9.4 Update SECURITY.md
+  - [x] 9.4 Update SECURITY.md
     - Update path validation documentation to reference mcp/resources/
     - Update directory restriction references
     - _Requirements: 5.3_
   
-  - [ ] 9.5 Update docs/prompts-guide.md
+  - [x] 9.5 Update docs/prompts-guide.md
     - Update all prompts/ path references to mcp/prompts/
     - Update examples and instructions
     - _Requirements: 5.1_

@@ -34,7 +34,7 @@ Prompts can only access resources through controlled mechanisms:
 
 - **Allowed schemes**: Only `architecture://` URIs permitted
 - **Path validation**: All paths validated with `filepath.Clean()` to prevent traversal
-- **Directory restrictions**: Access limited to configured `docs/` directory tree
+- **Directory restrictions**: Access limited to configured `mcp/resources/` directory tree
 - **Pattern matching**: Wildcard patterns (`*`) validated and bounded
 
 #### Resource Embedding Limits

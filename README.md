@@ -10,9 +10,9 @@ This service implements the MCP specification to enable AI agents and IDE integr
 
 The service exposes documentation through the following URI patterns:
 
-- `architecture://guidelines/{path}` - Architectural guidelines
-- `architecture://patterns/{path}` - Design patterns  
-- `architecture://adr/{adr_id}` - Architecture Decision Records
+- `architecture://guidelines/{path}` - Architectural guidelines from `mcp/resources/guidelines/`
+- `architecture://patterns/{path}` - Design patterns from `mcp/resources/patterns/`
+- `architecture://adr/{adr_id}` - Architecture Decision Records from `mcp/resources/adr/`
 
 ## Available MCP Prompts
 
@@ -83,7 +83,7 @@ make run-bridge
 
 The server will:
 1. Listen on TCP port 8080
-2. Monitor `docs/` directories for changes
+2. Monitor `mcp/resources/` and `mcp/prompts/` directories for changes
 3. Create a dedicated MCP server process for each client connection
 4. Provide real-time access to your architectural documentation
 
@@ -96,10 +96,12 @@ Verify on the client IDE that the agent is connected and appears as running (eit
 Place your markdown files in these directories:
 
 ```
-docs/
-├── guidelines/     # Architectural guidelines
-├── patterns/       # Design patterns
-└── adr/            # Architecture Decision Records
+mcp/
+├── resources/
+│   ├── guidelines/     # Architectural guidelines
+│   ├── patterns/       # Design patterns
+│   └── adr/            # Architecture Decision Records
+└── prompts/            # Prompt definitions (JSON)
 ```
 
 The server automatically detects and indexes new files.
@@ -159,7 +161,7 @@ The server will return a rendered prompt that includes your code and relevant pa
 
 ### Custom Prompts
 
-You can create custom prompts by adding JSON files to the `prompts/` directory. See `docs/prompts-guide.md` for detailed documentation on prompt definition format and template syntax.
+You can create custom prompts by adding JSON files to the `mcp/prompts/` directory. See `docs/prompts-guide.md` for detailed documentation on prompt definition format and template syntax.
 
 ## Development
 
