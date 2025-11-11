@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Create path configuration constants
+- [x] 1. Create path configuration constants
   - Create `internal/server/config.go` with path constants for resources and prompts directories
   - Define constants: ResourcesBasePath, PromptsBasePath, GuidelinesPath, PatternsPath, ADRPath
   - Define category constants: categoryGuideline, categoryPattern, categoryADR, categoryUnknown
