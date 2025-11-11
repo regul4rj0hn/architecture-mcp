@@ -19,6 +19,7 @@ import (
 	"mcp-architecture-service/pkg/errors"
 	"mcp-architecture-service/pkg/logging"
 	"mcp-architecture-service/pkg/monitor"
+	"mcp-architecture-service/pkg/prompts"
 	"mcp-architecture-service/pkg/scanner"
 )
 
@@ -32,6 +33,9 @@ type MCPServer struct {
 	cache   *cache.DocumentCache
 	scanner *scanner.DocumentationScanner
 	monitor *monitor.FileSystemMonitor
+
+	// Prompts system
+	promptManager *prompts.PromptManager
 
 	// Error handling and degradation
 	circuitBreakerManager *errors.CircuitBreakerManager
@@ -80,6 +84,9 @@ func NewMCPServer() *MCPServer {
 		degradationManager.RecordError(errors.ComponentFileSystemMonitoring, err)
 	}
 
+	// Initialize prompt manager
+	promptManager := prompts.NewPromptManager("prompts", docCache, fileMonitor)
+
 	server := &MCPServer{
 		serverInfo: models.MCPServerInfo{
 			Name:    "mcp-architecture-service",
@@ -90,6 +97,9 @@ func NewMCPServer() *MCPServer {
 				Subscribe:   false,
 				ListChanged: false,
 			},
+			Prompts: &models.MCPPromptCapabilities{
+				ListChanged: false,
+			},
 		},
 		initialized: false,
 
@@ -97,6 +107,9 @@ func NewMCPServer() *MCPServer {
 		cache:   docCache,
 		scanner: docScanner,
 		monitor: fileMonitor,
+
+		// Prompts system
+		promptManager: promptManager,
 
 		// Error handling
 		circuitBreakerManager: circuitBreakerManager,
@@ -138,6 +151,18 @@ func (s *MCPServer) Start(ctx context.Context) error {
 	} else {
 		s.loggingManager.LogStartupSequence("documentation_init", map[string]interface{}{},
 			time.Since(docInitStart), true)
+	}
+
+	// Initialize prompts system
+	promptInitStart := time.Now()
+	if err := s.initializePromptsSystem(); err != nil {
+		s.loggingManager.LogStartupSequence("prompts_init", map[string]interface{}{
+			"error": err.Error(),
+		}, time.Since(promptInitStart), false)
+		s.logger.WithError(err).Warn("Failed to initialize prompts system")
+	} else {
+		s.loggingManager.LogStartupSequence("prompts_init", map[string]interface{}{},
+			time.Since(promptInitStart), true)
 	}
 
 	// Start cache refresh coordinator
@@ -247,6 +272,10 @@ func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage
 		response = s.handleResourcesList(message)
 	case "resources/read":
 		response = s.handleResourcesRead(message)
+	case "prompts/list":
+		response = s.handlePromptsList(message)
+	case "prompts/get":
+		response = s.handlePromptsGet(message)
 	case "server/performance":
 		response = s.handlePerformanceMetrics(message)
 	default:
@@ -383,6 +412,89 @@ func (s *MCPServer) handleResourcesRead(message *models.MCPMessage) *models.MCPM
 
 	result := models.MCPResourcesReadResult{
 		Contents: []models.MCPResourceContent{content},
+	}
+
+	return &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      message.ID,
+		Result:  result,
+	}
+}
+
+// handlePromptsList handles the prompts/list method
+func (s *MCPServer) handlePromptsList(message *models.MCPMessage) *models.MCPMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Get all available prompts from the prompt manager
+	prompts := s.promptManager.ListPrompts()
+
+	result := models.MCPPromptsListResult{
+		Prompts: prompts,
+	}
+
+	return &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      message.ID,
+		Result:  result,
+	}
+}
+
+// handlePromptsGet handles the prompts/get method
+func (s *MCPServer) handlePromptsGet(message *models.MCPMessage) *models.MCPMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Parse request parameters
+	var params models.MCPPromptsGetParams
+	if message.Params != nil {
+		paramsBytes, err := json.Marshal(message.Params)
+		if err != nil {
+			return s.createErrorResponse(message.ID, -32602, "Invalid parameters")
+		}
+		if err := json.Unmarshal(paramsBytes, &params); err != nil {
+			return s.createErrorResponse(message.ID, -32602, "Invalid parameters format")
+		}
+	}
+
+	// Validate prompt name parameter
+	if params.Name == "" {
+		structuredErr := errors.NewValidationError(errors.ErrCodeInvalidParams,
+			"Missing required parameter: name", nil)
+		return s.createStructuredErrorResponse(message.ID, structuredErr)
+	}
+
+	// Render the prompt with provided arguments
+	result, err := s.promptManager.RenderPrompt(params.Name, params.Arguments)
+	if err != nil {
+		// Check if it's a prompt not found error
+		if strings.Contains(err.Error(), "prompt not found") {
+			structuredErr := errors.NewValidationError(errors.ErrCodeInvalidParams,
+				"Prompt not found", err).WithContext("prompt_name", params.Name)
+			return s.createStructuredErrorResponse(message.ID, structuredErr)
+		}
+
+		// Check if it's an argument validation error
+		if strings.Contains(err.Error(), "argument validation failed") ||
+			strings.Contains(err.Error(), "required argument missing") ||
+			strings.Contains(err.Error(), "exceeds maximum length") {
+			structuredErr := errors.NewValidationError(errors.ErrCodeInvalidParams,
+				err.Error(), err).WithContext("prompt_name", params.Name)
+			return s.createStructuredErrorResponse(message.ID, structuredErr)
+		}
+
+		// Check if it's a resource embedding error
+		if strings.Contains(err.Error(), "failed to embed resources") ||
+			strings.Contains(err.Error(), "resource not found") {
+			structuredErr := errors.NewMCPError(errors.ErrCodeResourceNotFound,
+				"Failed to embed resources", err).WithContext("prompt_name", params.Name)
+			return s.createStructuredErrorResponse(message.ID, structuredErr)
+		}
+
+		// Generic error
+		structuredErr := errors.NewMCPError(errors.ErrCodeInvalidParams,
+			"Failed to render prompt", err).WithContext("prompt_name", params.Name)
+		return s.createStructuredErrorResponse(message.ID, structuredErr)
 	}
 
 	return &models.MCPMessage{
@@ -531,6 +643,28 @@ func (s *MCPServer) initializeDocumentationSystemConcurrent(ctx context.Context,
 	s.logger.WithContext("total_documents", s.cache.Size()).
 		WithContext("startup_time_ms", scanDuration.Milliseconds()).
 		Info("Documentation system initialized successfully with concurrent processing")
+	return nil
+}
+
+// initializePromptsSystem loads prompts and sets up monitoring
+func (s *MCPServer) initializePromptsSystem() error {
+	s.logger.Info("Initializing prompts system")
+
+	// Load prompt definitions
+	if err := s.promptManager.LoadPrompts(); err != nil {
+		s.logger.WithError(err).Warn("Failed to load prompts")
+		return err
+	}
+
+	// Set up file system monitoring for prompts directory
+	if s.monitor != nil {
+		if err := s.promptManager.StartWatching(); err != nil {
+			s.logger.WithError(err).Warn("Failed to start prompts directory monitoring")
+			// Don't return error - prompts can still work without hot-reload
+		}
+	}
+
+	s.logger.Info("Prompts system initialized successfully")
 	return nil
 }
 

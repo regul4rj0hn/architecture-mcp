@@ -70,22 +70,22 @@
     - Create `pkg/prompts/manager_test.go` with tests for loading, registry management, hot reload, and concurrent access
     - _Requirements: 4.1, 4.3, 4.4_
 
-- [ ] 5. Integrate prompts into MCP server
-  - [ ] 5.1 Add prompt manager to server
+- [x] 5. Integrate prompts into MCP server
+  - [x] 5.1 Add prompt manager to server
     - Update MCPServer struct in `internal/server/server.go` to include promptManager field
     - Initialize PromptManager in NewMCPServer() constructor
     - Load prompts during server initialization in Start() method
     - Set up prompts directory monitoring for hot-reload
     - _Requirements: 4.1, 4.3_
   
-  - [ ] 5.2 Implement prompts/list handler
+  - [x] 5.2 Implement prompts/list handler
     - Create handlePromptsList() method in `internal/server/server.go`
     - Call promptManager.ListPrompts() and return MCPPromptsListResult
     - Add "prompts/list" case to handleMessage() switch statement
     - Ensure response time under 100ms
     - _Requirements: 1.1, 1.2, 1.3, 1.4_
   
-  - [ ] 5.3 Implement prompts/get handler
+  - [x] 5.3 Implement prompts/get handler
     - Create handlePromptsGet() method in `internal/server/server.go`
     - Parse MCPPromptsGetParams from request
     - Call promptManager.RenderPrompt() with name and arguments
@@ -93,7 +93,7 @@
     - Add "prompts/get" case to handleMessage() switch statement
     - _Requirements: 2.1, 2.4, 2.5, 5.5_
   
-  - [ ] 5.4 Add error handling for prompt operations
+  - [x] 5.4 Add error handling for prompt operations
     - Implement error responses for prompt not found (code -32602)
     - Implement error responses for missing required arguments (code -32602)
     - Implement error responses for argument too long (code -32602)
@@ -101,12 +101,12 @@
     - Use existing createStructuredErrorResponse() pattern
     - _Requirements: 2.3, 3.3, 9.1, 9.2, 9.3, 9.4, 9.5_
   
-  - [ ] 5.5 Update server capabilities
+  - [x] 5.5 Update server capabilities
     - Add Prompts field to MCPCapabilities struct in `internal/models/mcp.go`
     - Update handleInitialize() to include prompts capability in initialization response
     - _Requirements: 1.1_
   
-  - [ ]* 5.6 Write integration tests for server handlers
+  - [x] 5.6 Write integration tests for server handlers
     - Update `internal/server/server_test.go` with tests for prompts/list and prompts/get handlers
     - _Requirements: 1.1, 2.1_
 
