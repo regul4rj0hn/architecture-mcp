@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"mcp-architecture-service/pkg/config"
 	"testing"
 	"time"
 )
@@ -9,8 +10,8 @@ import (
 func TestDocumentMetadata_JSONSerialization(t *testing.T) {
 	metadata := DocumentMetadata{
 		Title:        "Test Document",
-		Category:     "guideline",
-		Path:         "docs/guidelines/test.md",
+		Category:     config.CategoryGuideline,
+		Path:         config.GuidelinesPath + "/test.md",
 		LastModified: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 		Size:         1024,
 		Checksum:     "abc123def456",
@@ -140,8 +141,8 @@ func TestDocument_JSONSerialization(t *testing.T) {
 	doc := Document{
 		Metadata: DocumentMetadata{
 			Title:        "Complete Document",
-			Category:     "pattern",
-			Path:         "docs/patterns/test.md",
+			Category:     config.CategoryPattern,
+			Path:         config.PatternsPath + "/test.md",
 			LastModified: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 			Size:         2048,
 			Checksum:     "def456ghi789",
@@ -192,8 +193,8 @@ func TestADRDocument_JSONSerialization(t *testing.T) {
 	adr := ADRDocument{
 		DocumentMetadata: DocumentMetadata{
 			Title:        "ADR-001: Use Microservices",
-			Category:     "adr",
-			Path:         "docs/adr/001-microservices.md",
+			Category:     config.CategoryADR,
+			Path:         config.ADRPath + "/001-microservices.md",
 			LastModified: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 			Size:         4096,
 			Checksum:     "ghi789jkl012",
@@ -306,16 +307,16 @@ func TestDocumentIndex_JSONSerialization(t *testing.T) {
 		Documents: []DocumentMetadata{
 			{
 				Title:        "API Design",
-				Category:     "guideline",
-				Path:         "docs/guidelines/api-design.md",
+				Category:     config.CategoryGuideline,
+				Path:         config.GuidelinesPath + "/api-design.md",
 				LastModified: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 				Size:         1024,
 				Checksum:     "abc123",
 			},
 			{
 				Title:        "Security Guidelines",
-				Category:     "guideline",
-				Path:         "docs/guidelines/security.md",
+				Category:     config.CategoryGuideline,
+				Path:         config.GuidelinesPath + "/security.md",
 				LastModified: time.Date(2024, 1, 16, 11, 0, 0, 0, time.UTC),
 				Size:         2048,
 				Checksum:     "def456",
@@ -353,7 +354,7 @@ func TestDocumentIndex_JSONSerialization(t *testing.T) {
 func TestFileEvent_JSONSerialization(t *testing.T) {
 	event := FileEvent{
 		Type:     "modify",
-		Path:     "docs/guidelines/api-design.md",
+		Path:     config.GuidelinesPath + "/api-design.md",
 		IsDir:    false,
 		Checksum: "abc123def456",
 	}

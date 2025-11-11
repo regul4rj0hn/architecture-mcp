@@ -59,27 +59,27 @@
     - Remove moved functions, add imports for new files
     - _Requirements: 6.2, 6.3, 7.1_
 
-- [ ] 6. Update all test files with new paths
-  - [ ] 6.1 Update internal/server/server_test.go
+- [x] 6. Update all test files with new paths
+  - [x] 6.1 Update internal/server/server_test.go
     - Replace all "docs/guidelines/", "docs/patterns/", "docs/adr/" with mcp/resources/ paths
     - Update test fixture paths to use new directory structure
     - _Requirements: 3.1, 3.2_
   
-  - [ ] 6.2 Update internal/server/integration_test.go
+  - [x] 6.2 Update internal/server/integration_test.go
     - Replace all docs/ path references with mcp/resources/ paths
     - Update test event paths to use new structure
     - _Requirements: 3.1, 3.2_
   
-  - [ ] 6.3 Update internal/server/server_benchmark_test.go
+  - [x] 6.3 Update internal/server/server_benchmark_test.go
     - Replace all docs/ path references with mcp/resources/ paths
     - Update benchmark test data paths
     - _Requirements: 3.1_
   
-  - [ ] 6.4 Update internal/models/document_test.go
+  - [x] 6.4 Update internal/models/document_test.go
     - Replace all docs/ path references with mcp/resources/ paths
     - _Requirements: 3.1_
   
-  - [ ] 6.5 Update pkg/prompts tests
+  - [x] 6.5 Update pkg/prompts tests
     - Verify prompt manager tests use correct paths
     - Update any hardcoded prompts/ references to mcp/prompts/
     - _Requirements: 3.1, 3.2_

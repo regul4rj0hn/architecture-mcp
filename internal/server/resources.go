@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 )
 
@@ -49,13 +50,13 @@ func (s *MCPServer) generateResourceURI(category, path string) string {
 	// Remove category prefix from path if present
 	switch category {
 	case "guideline":
-		cleanPath = strings.TrimPrefix(cleanPath, GuidelinesPath+"/")
+		cleanPath = strings.TrimPrefix(cleanPath, config.GuidelinesPath+"/")
 		return fmt.Sprintf("architecture://guidelines/%s", cleanPath)
 	case "pattern":
-		cleanPath = strings.TrimPrefix(cleanPath, PatternsPath+"/")
+		cleanPath = strings.TrimPrefix(cleanPath, config.PatternsPath+"/")
 		return fmt.Sprintf("architecture://patterns/%s", cleanPath)
 	case "adr":
-		cleanPath = strings.TrimPrefix(cleanPath, ADRPath+"/")
+		cleanPath = strings.TrimPrefix(cleanPath, config.ADRPath+"/")
 		// For ADRs, extract ADR ID from filename if possible
 		adrId := s.extractADRId(cleanPath)
 		return fmt.Sprintf("architecture://adr/%s", adrId)
@@ -201,9 +202,9 @@ func (s *MCPServer) generatePossibleFilePaths(category, resourcePath string) []s
 
 	switch category {
 	case "guideline":
-		paths = append(paths, filepath.Join(GuidelinesPath, resourcePath))
+		paths = append(paths, filepath.Join(config.GuidelinesPath, resourcePath))
 	case "pattern":
-		paths = append(paths, filepath.Join(PatternsPath, resourcePath))
+		paths = append(paths, filepath.Join(config.PatternsPath, resourcePath))
 	case "adr":
 		// For ADRs, try different naming patterns
 		adrId := strings.TrimSuffix(resourcePath, ".md")
@@ -217,7 +218,7 @@ func (s *MCPServer) generatePossibleFilePaths(category, resourcePath string) []s
 		}
 
 		for _, pattern := range patterns {
-			paths = append(paths, filepath.Join(ADRPath, pattern))
+			paths = append(paths, filepath.Join(config.ADRPath, pattern))
 		}
 
 		// Also try to find by ADR ID in existing documents

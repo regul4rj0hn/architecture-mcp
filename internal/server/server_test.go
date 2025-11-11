@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/prompts"
 )
 
@@ -120,8 +121,8 @@ func TestHandleResourcesList(t *testing.T) {
 	testDoc1 := &models.Document{
 		Metadata: models.DocumentMetadata{
 			Title:        "API Design Guidelines",
-			Category:     "guideline",
-			Path:         "docs/guidelines/api-design.md",
+			Category:     config.CategoryGuideline,
+			Path:         config.GuidelinesPath + "/api-design.md",
 			LastModified: time.Now(),
 			Size:         1024,
 			Checksum:     "abc123",
@@ -134,8 +135,8 @@ func TestHandleResourcesList(t *testing.T) {
 	testDoc2 := &models.Document{
 		Metadata: models.DocumentMetadata{
 			Title:        "Repository Pattern",
-			Category:     "pattern",
-			Path:         "docs/patterns/repository.md",
+			Category:     config.CategoryPattern,
+			Path:         config.PatternsPath + "/repository.md",
 			LastModified: time.Now(),
 			Size:         512,
 			Checksum:     "def456",
@@ -229,8 +230,8 @@ func TestHandleResourcesRead(t *testing.T) {
 	testDoc := &models.Document{
 		Metadata: models.DocumentMetadata{
 			Title:        "API Design Guidelines",
-			Category:     "guideline",
-			Path:         "docs/guidelines/api-design.md",
+			Category:     config.CategoryGuideline,
+			Path:         config.GuidelinesPath + "/api-design.md",
 			LastModified: time.Now(),
 			Size:         1024,
 			Checksum:     "abc123",

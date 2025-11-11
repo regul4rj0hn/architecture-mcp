@@ -8,6 +8,7 @@ import (
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/cache"
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/monitor"
 )
 
@@ -296,7 +297,7 @@ func TestRenderPrompt(t *testing.T) {
 	// Add test document to cache
 	testDoc := &models.Document{
 		Metadata: models.DocumentMetadata{
-			Path:     "docs/patterns/test-pattern.md",
+			Path:     config.PatternsPath + "/test-pattern.md",
 			Category: "patterns",
 			Title:    "Test Pattern",
 		},
@@ -304,7 +305,7 @@ func TestRenderPrompt(t *testing.T) {
 			RawContent: "This is a test pattern",
 		},
 	}
-	cache.Set("docs/patterns/test-pattern.md", testDoc)
+	cache.Set(config.PatternsPath+"/test-pattern.md", testDoc)
 
 	monitor, err := monitor.NewFileSystemMonitor()
 	if err != nil {

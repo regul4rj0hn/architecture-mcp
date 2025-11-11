@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,20 +10,21 @@ import (
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/config"
 )
 
 func TestDocumentationSystemIntegration(t *testing.T) {
 	// Create temporary directory structure
-	tempDir, err := ioutil.TempDir("", "mcp_integration_test")
+	tempDir, err := os.MkdirTemp("", "mcp_integration_test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Create docs subdirectories
-	guidelinesDir := filepath.Join(tempDir, "docs", "guidelines")
-	patternsDir := filepath.Join(tempDir, "docs", "patterns")
-	adrDir := filepath.Join(tempDir, "docs", "adr")
+	// Create mcp/resources subdirectories
+	guidelinesDir := filepath.Join(tempDir, "mcp", "resources", "guidelines")
+	patternsDir := filepath.Join(tempDir, "mcp", "resources", "patterns")
+	adrDir := filepath.Join(tempDir, "mcp", "resources", "adr")
 
 	for _, dir := range []string{guidelinesDir, patternsDir, adrDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -40,7 +40,7 @@ func TestDocumentationSystemIntegration(t *testing.T) {
 	}
 
 	for path, content := range testDocs {
-		if err := ioutil.WriteFile(path, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatalf("Failed to write test file %s: %v", path, err)
 		}
 	}
@@ -91,7 +91,7 @@ func TestDocumentationSystemIntegration(t *testing.T) {
 		newContent := "# Updated API Design Guidelines\n\nThis is updated content."
 		apiDesignPath := filepath.Join(guidelinesDir, "api-design.md")
 
-		err = ioutil.WriteFile(apiDesignPath, []byte(newContent), 0644)
+		err = os.WriteFile(apiDesignPath, []byte(newContent), 0644)
 		if err != nil {
 			t.Fatalf("Failed to update test file: %v", err)
 		}
@@ -148,7 +148,7 @@ func TestCacheRefreshCoordinator(t *testing.T) {
 	go server.cacheRefreshCoordinator(ctx)
 
 	// Test that coordinator can receive events
-	testEvent := models.FileEvent{Type: "delete", Path: "docs/patterns/test2.md"}
+	testEvent := models.FileEvent{Type: "delete", Path: config.PatternsPath + "/test2.md"}
 
 	select {
 	case server.refreshChan <- testEvent:
@@ -172,11 +172,11 @@ func TestGetCategoryFromPath(t *testing.T) {
 		path     string
 		expected string
 	}{
-		{"docs/guidelines/api.md", "guideline"},
-		{"docs/patterns/repository.md", "pattern"},
-		{"docs/adr/adr-001.md", "adr"},
+		{config.GuidelinesPath + "/api.md", "guideline"},
+		{config.PatternsPath + "/repository.md", "pattern"},
+		{config.ADRPath + "/adr-001.md", "adr"},
 		{"some/other/path.md", "unknown"},
-		{"DOCS/GUIDELINES/API.MD", "guideline"}, // Test case insensitive
+		{strings.ToUpper(config.GuidelinesPath) + "/API.MD", "guideline"}, // Test case insensitive
 	}
 
 	for _, test := range tests {
@@ -190,16 +190,16 @@ func TestGetCategoryFromPath(t *testing.T) {
 // TestMCPResourceMethodsIntegration tests the complete MCP resource functionality
 func TestMCPResourceMethodsIntegration(t *testing.T) {
 	// Create temporary directory structure with test documents
-	tempDir, err := ioutil.TempDir("", "mcp_resource_integration_test")
+	tempDir, err := os.MkdirTemp("", "mcp_resource_integration_test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Create docs subdirectories
-	guidelinesDir := filepath.Join(tempDir, "docs", "guidelines")
-	patternsDir := filepath.Join(tempDir, "docs", "patterns")
-	adrDir := filepath.Join(tempDir, "docs", "adr")
+	// Create mcp/resources subdirectories
+	guidelinesDir := filepath.Join(tempDir, "mcp", "resources", "guidelines")
+	patternsDir := filepath.Join(tempDir, "mcp", "resources", "patterns")
+	adrDir := filepath.Join(tempDir, "mcp", "resources", "adr")
 
 	for _, dir := range []string{guidelinesDir, patternsDir, adrDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -270,7 +270,7 @@ We will use PostgreSQL as our primary database.`,
 	}
 
 	for path, content := range testDocs {
-		if err := ioutil.WriteFile(path, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatalf("Failed to write test file %s: %v", path, err)
 		}
 	}
@@ -676,7 +676,7 @@ func TestMCPProtocolComplianceIntegration(t *testing.T) {
 			Metadata: models.DocumentMetadata{
 				Title:        "Test Document",
 				Category:     "guideline",
-				Path:         "docs/guidelines/test.md",
+				Path:         config.GuidelinesPath + "/test.md",
 				LastModified: time.Now(),
 				Size:         100,
 				Checksum:     "test123",
@@ -742,7 +742,7 @@ func TestMCPProtocolComplianceIntegration(t *testing.T) {
 			Metadata: models.DocumentMetadata{
 				Title:        "Content Test",
 				Category:     "pattern",
-				Path:         "docs/patterns/content-test.md",
+				Path:         config.PatternsPath + "/content-test.md",
 				LastModified: time.Now(),
 				Size:         200,
 				Checksum:     "content123",
@@ -927,7 +927,7 @@ func TestResourceURIParsingIntegration(t *testing.T) {
 // TestResourceContentRetrievalIntegration tests content retrieval with various scenarios
 func TestResourceContentRetrievalIntegration(t *testing.T) {
 	// Create temporary directory with test documents
-	tempDir, err := ioutil.TempDir("", "mcp_content_retrieval_test")
+	tempDir, err := os.MkdirTemp("", "mcp_content_retrieval_test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -935,10 +935,10 @@ func TestResourceContentRetrievalIntegration(t *testing.T) {
 
 	// Create test documents with different content types
 	testDocs := map[string]string{
-		filepath.Join(tempDir, "docs", "guidelines", "simple.md"): `# Simple Document
+		filepath.Join(tempDir, "mcp", "resources", "guidelines", "simple.md"): `# Simple Document
 This is a simple document with basic content.`,
 
-		filepath.Join(tempDir, "docs", "patterns", "complex.md"): `# Complex Pattern Document
+		filepath.Join(tempDir, "mcp", "resources", "patterns", "complex.md"): `# Complex Pattern Document
 
 ## Overview
 This is a more complex document with multiple sections.
@@ -956,7 +956,7 @@ This is a more complex document with multiple sections.
 |----------|----------|
 | Value 1  | Value 2  |`,
 
-		filepath.Join(tempDir, "docs", "adr", "adr-special-chars.md"): `# ADR with Special Characters
+		filepath.Join(tempDir, "mcp", "resources", "adr", "adr-special-chars.md"): `# ADR with Special Characters
 
 This document contains special characters: áéíóú, ñ, ç, ü
 
@@ -974,7 +974,7 @@ This document contains special characters: áéíóú, ñ, ç, ü
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatalf("Failed to create directory %s: %v", dir, err)
 		}
-		if err := ioutil.WriteFile(path, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatalf("Failed to write test file %s: %v", path, err)
 		}
 	}

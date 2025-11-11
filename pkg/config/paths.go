@@ -1,4 +1,4 @@
-package server
+package config
 
 // Path configuration constants for MCP resources and prompts
 const (
@@ -14,8 +14,8 @@ const (
 
 // Category constants for resource classification
 const (
-	categoryGuideline = "guideline"
-	categoryPattern   = "pattern"
-	categoryADR       = "adr"
-	categoryUnknown   = "unknown"
+	CategoryGuideline = "guideline"
+	CategoryPattern   = "pattern"
+	CategoryADR       = "adr"
+	CategoryUnknown   = "unknown"
 )

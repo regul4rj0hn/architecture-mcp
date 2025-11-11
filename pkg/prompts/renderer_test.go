@@ -8,6 +8,7 @@ import (
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/cache"
+	"mcp-architecture-service/pkg/config"
 )
 
 func TestRenderTemplate(t *testing.T) {
@@ -107,7 +108,7 @@ func TestEmbedResources(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:        "API Design Guidelines",
 			Category:     "guidelines",
-			Path:         "docs/guidelines/api-design.md",
+			Path:         config.GuidelinesPath + "/api-design.md",
 			LastModified: time.Now(),
 		},
 		Content: models.DocumentContent{
@@ -119,7 +120,7 @@ func TestEmbedResources(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:        "Repository Pattern",
 			Category:     "patterns",
-			Path:         "docs/patterns/repository-pattern.md",
+			Path:         config.PatternsPath + "/repository-pattern.md",
 			LastModified: time.Now(),
 		},
 		Content: models.DocumentContent{
@@ -131,7 +132,7 @@ func TestEmbedResources(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:        "Factory Pattern",
 			Category:     "patterns",
-			Path:         "docs/patterns/factory-pattern.md",
+			Path:         config.PatternsPath + "/factory-pattern.md",
 			LastModified: time.Now(),
 		},
 		Content: models.DocumentContent{
@@ -139,9 +140,9 @@ func TestEmbedResources(t *testing.T) {
 		},
 	}
 
-	cache.Set("docs/guidelines/api-design.md", doc1)
-	cache.Set("docs/patterns/repository-pattern.md", doc2)
-	cache.Set("docs/patterns/factory-pattern.md", doc3)
+	cache.Set(config.GuidelinesPath+"/api-design.md", doc1)
+	cache.Set(config.PatternsPath+"/repository-pattern.md", doc2)
+	cache.Set(config.PatternsPath+"/factory-pattern.md", doc3)
 
 	renderer := NewTemplateRenderer(cache)
 
@@ -162,7 +163,7 @@ func TestEmbedResources(t *testing.T) {
 				if !strings.Contains(result, "Use RESTful principles") {
 					t.Error("Result should contain document content")
 				}
-				if !strings.Contains(result, "docs/guidelines/api-design.md") {
+				if !strings.Contains(result, config.GuidelinesPath+"/api-design.md") {
 					t.Error("Result should contain source path")
 				}
 			},
@@ -242,14 +243,14 @@ func TestEmbedResourcesSizeLimits(t *testing.T) {
 				Metadata: models.DocumentMetadata{
 					Title:    "Test Document",
 					Category: "patterns",
-					Path:     "docs/patterns/test.md",
+					Path:     config.PatternsPath + "/test.md",
 				},
 				Content: models.DocumentContent{
 					RawContent: "Small content",
 				},
 			}
 			// Use unique path for each document
-			path := fmt.Sprintf("docs/patterns/test-%d.md", i)
+			path := fmt.Sprintf(config.PatternsPath+"/test-%d.md", i)
 			doc.Metadata.Path = path
 			cache.Set(path, doc)
 		}
@@ -276,13 +277,13 @@ func TestEmbedResourcesSizeLimits(t *testing.T) {
 			Metadata: models.DocumentMetadata{
 				Title:    "Large Document",
 				Category: "patterns",
-				Path:     "docs/patterns/large.md",
+				Path:     config.PatternsPath + "/large.md",
 			},
 			Content: models.DocumentContent{
 				RawContent: largeContent,
 			},
 		}
-		cache.Set("docs/patterns/large.md", doc)
+		cache.Set(config.PatternsPath+"/large.md", doc)
 
 		renderer := NewTemplateRenderer(cache)
 		template := "{{resource:architecture://patterns/*}}"
@@ -306,7 +307,7 @@ func TestResolveResourcePattern(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:    "API Design",
 			Category: "guidelines",
-			Path:     "docs/guidelines/api-design.md",
+			Path:     config.GuidelinesPath + "/api-design.md",
 		},
 		Content: models.DocumentContent{
 			RawContent: "API content",
@@ -317,7 +318,7 @@ func TestResolveResourcePattern(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:    "Repository Pattern",
 			Category: "patterns",
-			Path:     "docs/patterns/repository-pattern.md",
+			Path:     config.PatternsPath + "/repository-pattern.md",
 		},
 		Content: models.DocumentContent{
 			RawContent: "Repository content",
@@ -328,16 +329,16 @@ func TestResolveResourcePattern(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:    "ADR 001",
 			Category: "adr",
-			Path:     "docs/adr/001-microservices-architecture.md",
+			Path:     config.ADRPath + "/001-microservices-architecture.md",
 		},
 		Content: models.DocumentContent{
 			RawContent: "ADR content",
 		},
 	}
 
-	cache.Set("docs/guidelines/api-design.md", doc1)
-	cache.Set("docs/patterns/repository-pattern.md", doc2)
-	cache.Set("docs/adr/001-microservices-architecture.md", doc3)
+	cache.Set(config.GuidelinesPath+"/api-design.md", doc1)
+	cache.Set(config.PatternsPath+"/repository-pattern.md", doc2)
+	cache.Set(config.ADRPath+"/001-microservices-architecture.md", doc3)
 
 	renderer := NewTemplateRenderer(cache)
 
@@ -435,13 +436,13 @@ func TestCombinedRenderingAndEmbedding(t *testing.T) {
 		Metadata: models.DocumentMetadata{
 			Title:    "Test Pattern",
 			Category: "patterns",
-			Path:     "docs/patterns/test-pattern.md",
+			Path:     config.PatternsPath + "/test-pattern.md",
 		},
 		Content: models.DocumentContent{
 			RawContent: "Pattern implementation details",
 		},
 	}
-	cache.Set("docs/patterns/test-pattern.md", doc)
+	cache.Set(config.PatternsPath+"/test-pattern.md", doc)
 
 	renderer := NewTemplateRenderer(cache)
 

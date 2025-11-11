@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/config"
 )
 
 // BenchmarkMCPInitialize benchmarks the MCP initialization flow
@@ -213,7 +214,7 @@ func BenchmarkCacheOperations(b *testing.B) {
 	b.Run("CacheGet", func(b *testing.B) {
 		keys := make([]string, 100)
 		for i := 0; i < 100; i++ {
-			keys[i] = fmt.Sprintf("docs/guidelines/test-%d.md", i)
+			keys[i] = fmt.Sprintf("%s/test-%d.md", config.GuidelinesPath, i)
 		}
 
 		b.ResetTimer()
@@ -376,16 +377,22 @@ func BenchmarkPerformanceMetrics(b *testing.B) {
 
 // Helper function to populate server with test documents
 func populateServerWithTestDocuments(server *MCPServer, count int) {
+	categoryPaths := map[string]string{
+		"guideline": config.GuidelinesPath,
+		"pattern":   config.PatternsPath,
+		"adr":       config.ADRPath,
+	}
 	categories := []string{"guideline", "pattern", "adr"}
 
 	for i := 0; i < count; i++ {
 		category := categories[i%len(categories)]
+		basePath := categoryPaths[category]
 
 		doc := &models.Document{
 			Metadata: models.DocumentMetadata{
 				Title:        fmt.Sprintf("Test %s %d", category, i),
 				Category:     category,
-				Path:         fmt.Sprintf("docs/%ss/test-%d.md", category, i),
+				Path:         fmt.Sprintf("%s/test-%d.md", basePath, i),
 				LastModified: time.Now(),
 				Size:         1024,
 				Checksum:     fmt.Sprintf("checksum-%d", i),
@@ -401,6 +408,11 @@ func populateServerWithTestDocuments(server *MCPServer, count int) {
 
 // Helper function to populate server with large test documents
 func populateServerWithLargeTestDocuments(server *MCPServer, count int, docSize int) {
+	categoryPaths := map[string]string{
+		"guideline": config.GuidelinesPath,
+		"pattern":   config.PatternsPath,
+		"adr":       config.ADRPath,
+	}
 	categories := []string{"guideline", "pattern", "adr"}
 
 	// Create content of specified size
@@ -408,12 +420,13 @@ func populateServerWithLargeTestDocuments(server *MCPServer, count int, docSize 
 
 	for i := 0; i < count; i++ {
 		category := categories[i%len(categories)]
+		basePath := categoryPaths[category]
 
 		doc := &models.Document{
 			Metadata: models.DocumentMetadata{
 				Title:        fmt.Sprintf("Large Test %s %d", category, i),
 				Category:     category,
-				Path:         fmt.Sprintf("docs/%ss/large-test-%d.md", category, i),
+				Path:         fmt.Sprintf("%s/large-test-%d.md", basePath, i),
 				LastModified: time.Now(),
 				Size:         int64(len(contentTemplate)),
 				Checksum:     fmt.Sprintf("large-checksum-%d", i),
@@ -433,9 +446,9 @@ func createTestDocumentationFiles(baseDir string, count int) error {
 		name string
 		dir  string
 	}{
-		{"guideline", "docs/guidelines"},
-		{"pattern", "docs/patterns"},
-		{"adr", "docs/adr"},
+		{"guideline", config.GuidelinesPath},
+		{"pattern", config.PatternsPath},
+		{"adr", config.ADRPath},
 	}
 
 	for _, cat := range categories {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 )
 
@@ -16,9 +17,9 @@ import (
 func (s *MCPServer) initializeDocumentationSystem(ctx context.Context) error {
 	// Define documentation directories to scan
 	docDirs := []string{
-		GuidelinesPath,
-		PatternsPath,
-		ADRPath,
+		config.GuidelinesPath,
+		config.PatternsPath,
+		config.ADRPath,
 	}
 
 	// Populate initial cache using concurrent scanner

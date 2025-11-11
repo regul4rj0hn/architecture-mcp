@@ -11,6 +11,7 @@ import (
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/cache"
+	"mcp-architecture-service/pkg/config"
 	"mcp-architecture-service/pkg/errors"
 	"mcp-architecture-service/pkg/logging"
 	"mcp-architecture-service/pkg/monitor"
@@ -80,7 +81,7 @@ func NewMCPServer() *MCPServer {
 	}
 
 	// Initialize prompt manager
-	promptManager := prompts.NewPromptManager(PromptsBasePath, docCache, fileMonitor)
+	promptManager := prompts.NewPromptManager(config.PromptsBasePath, docCache, fileMonitor)
 
 	server := &MCPServer{
 		serverInfo: models.MCPServerInfo{
