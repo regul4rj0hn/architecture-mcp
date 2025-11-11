@@ -34,6 +34,16 @@ The service provides interactive prompts that combine instructions with architec
   - Arguments: `topic` (required)
   - Embeds example ADRs and template structure
 
+## Available MCP Tools
+
+The service provides executable tools that enable AI agents to perform actions on architectural documentation:
+
+- **validate-against-pattern** - Validates code against documented patterns for compliance
+- **search-architecture** - Searches documentation by keywords across guidelines, patterns, and ADRs
+- **check-adr-alignment** - Checks if proposed decisions align with existing ADRs
+
+See [Tools Development Guide](docs/tools-guide.md) for detailed schemas, examples, and how to create custom tools.
+
 ## MCP Protocol Support
 
 ### Resources
@@ -45,6 +55,10 @@ The service provides interactive prompts that combine instructions with architec
 ### Prompts
 - `prompts/list` - List all available interactive prompts
 - `prompts/get` - Invoke a prompt with arguments to get rendered content
+
+### Tools
+- `tools/list` - List all available executable tools with schemas
+- `tools/call` - Execute a tool with validated arguments
 
 Communication via JSON-RPC 2.0 over stdio (local) or TCP (bridge mode).
 
@@ -110,62 +124,17 @@ mcp/
 
 The server automatically detects and indexes new files.
 
-## Using Prompts
+## Usage
 
-### Example: Review Code Against Patterns
+AI agents can interact with the service through standard MCP methods. See the [Architecture Overview](docs/architecture.md) for detailed protocol flows and integration patterns.
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "prompts/get",
-  "params": {
-    "name": "review-code-against-patterns",
-    "arguments": {
-      "code": "func ProcessOrder(order Order) error {\n  // implementation\n}",
-      "language": "go"
-    }
-  }
-}
-```
+### Custom Prompts and Tools
 
-The server will return a rendered prompt that includes your code and relevant pattern documentation for the AI to analyze.
+- Add custom prompts as JSON files in `mcp/prompts/` - see [Prompts Guide](docs/prompts-guide.md)
+- Create custom tools by implementing the Tool interface - see [Tools Development Guide](docs/tools-guide.md)
+- Prompts can reference tools using `{{tool:tool-name}}` syntax for guided workflows
 
-### Example: Suggest Patterns
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "prompts/get",
-  "params": {
-    "name": "suggest-patterns",
-    "arguments": {
-      "problem": "Need to handle multiple payment providers with different APIs"
-    }
-  }
-}
-```
-
-### Example: Create ADR
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "prompts/get",
-  "params": {
-    "name": "create-adr",
-    "arguments": {
-      "topic": "Adopting event-driven architecture for order processing"
-    }
-  }
-}
-```
-
-### Custom Prompts
-
-You can create custom prompts by adding JSON files to the `mcp/prompts/` directory. See `docs/prompts-guide.md` for detailed documentation on prompt definition format and template syntax.
 
 ## Development
 
@@ -175,3 +144,10 @@ make build-all    # Build all binaries
 make test         # Run tests
 make help         # Show all available commands
 ```
+
+## Documentation
+
+- [Architecture Overview](docs/architecture.md) - System architecture diagrams including tools subsystem
+- [Tools Development Guide](docs/tools-guide.md) - Complete guide for creating custom tools
+- [Prompts Guide](docs/prompts-guide.md) - Prompt definition format and template syntax
+- [ADR Template](docs/adr-template.md) - Template for Architecture Decision Records
