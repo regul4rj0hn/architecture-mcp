@@ -10,13 +10,22 @@ inclusion: always
 cmd/mcp-server/     # Entry point: main.go with signal handling
 internal/models/    # document.go (docs), mcp.go (protocol messages)
 internal/server/    # MCP message handling logic
+  ├── server.go     # Core server struct and lifecycle
+  ├── handlers.go   # MCP protocol handlers
+  └── initialization.go  # System initialization
 pkg/cache/          # Thread-safe in-memory cache
 pkg/monitor/        # File system watcher (fsnotify)
 pkg/scanner/        # Documentation parser
 pkg/errors/         # Error handling, circuit breaker, graceful degradation
 pkg/logging/        # Structured logging
 pkg/validation/     # Input validation
-docs/               # Content: guidelines/, patterns/, adr/
+mcp/                # MCP assets (resources and prompts)
+  ├── resources/    # Architectural documentation
+  │   ├── guidelines/
+  │   ├── patterns/
+  │   └── adr/
+  └── prompts/      # Prompt definitions (JSON)
+docs/               # Project documentation (separate from MCP resources)
 ```
 
 ## Package Rules
@@ -27,7 +36,9 @@ docs/               # Content: guidelines/, patterns/, adr/
 - Never import `internal/` from `pkg/`
 
 **Where to add new code**:
-- MCP handlers → `internal/server/server.go`
+- MCP handlers → `internal/server/handlers.go`
+- Server lifecycle → `internal/server/server.go`
+- System initialization → `internal/server/initialization.go`
 - Protocol types → `internal/models/mcp.go`
 - Document types → `internal/models/document.go`
 - Utilities → `pkg/` subdirectories
@@ -76,12 +87,30 @@ docs/               # Content: guidelines/, patterns/, adr/
 - Graceful shutdown with signal handling
 - Clean up with defer
 
+## Code Quality Standards
+
+**Effective Go principles**:
+- Files should not exceed 500 lines (split into focused modules)
+- Functions should not exceed 100 lines (extract helpers)
+- Use early returns to avoid nested if-else statements
+- Keep nesting depth ≤ 3 levels
+- Extract magic strings/numbers to named constants
+- Comments explain WHY, not WHAT
+- Run `go fmt` before committing
+
+**Idiomatic patterns**:
+- Use table-driven tests with `t.Run()`
+- Prefer composition over inheritance
+- Use interfaces for testability, define in consumer packages
+- Handle errors explicitly, wrap with context
+- Use defer for cleanup operations
+
 ## Security
 
 **Path validation** (critical):
 - Always validate URIs before filesystem access
 - Use `filepath.Clean()` to normalize
-- Verify paths stay within `docs/` directory
+- Verify paths stay within `mcp/resources/` directory
 - Reject `..` traversal attempts
 
 **Container constraints**:

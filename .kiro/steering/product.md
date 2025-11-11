@@ -9,15 +9,15 @@ inclusion: always
 MCP server exposing architectural documentation (guidelines, patterns, ADRs) as resources and interactive prompts for guided workflows. JSON-RPC 2.0 over stdio only—no HTTP, no network.
 
 **MCP primitives**:
-- **Resources**: Architectural documentation from `docs/`
-- **Prompts**: Interactive templates (code review, pattern suggestions, ADR creation)
+- **Resources**: Architectural documentation from `mcp/resources/`
+- **Prompts**: Interactive templates from `mcp/prompts/` (code review, pattern suggestions, ADR creation)
 
 ## Resource URIs
 
 Use `architecture://` scheme:
-- `architecture://guidelines/{filename}` → `docs/guidelines/`
-- `architecture://patterns/{filename}` → `docs/patterns/`
-- `architecture://adr/{adr-id}` → `docs/adr/` (e.g., `001-microservices-architecture`)
+- `architecture://guidelines/{filename}` → `mcp/resources/guidelines/`
+- `architecture://patterns/{filename}` → `mcp/resources/patterns/`
+- `architecture://adr/{adr-id}` → `mcp/resources/adr/` (e.g., `001-microservices-architecture`)
 
 **Always validate paths to prevent traversal attacks.**
 
@@ -33,16 +33,16 @@ Use `architecture://` scheme:
 - `-32603`: Internal error
 
 **Behavior**:
-- Resources discovered by scanning `docs/` tree
-- Prompts loaded from `prompts/*.json`
+- Resources discovered by scanning `mcp/resources/` tree
+- Prompts loaded from `mcp/prompts/*.json`
 - Return content as plain text in MCP format
 - Communication via stdin/stdout only
 
 ## Documentation Structure
 
-**docs/guidelines/** - High-level architectural principles
-**docs/patterns/** - Reusable design patterns with examples
-**docs/adr/** - Decision records (title, status, context, decision, consequences)
+**mcp/resources/guidelines/** - High-level architectural principles
+**mcp/resources/patterns/** - Reusable design patterns with examples
+**mcp/resources/adr/** - Decision records (title, status, context, decision, consequences)
 
 **Rules**:
 - All files are markdown (`.md`)
@@ -55,7 +55,7 @@ Use `architecture://` scheme:
 - `suggest-patterns` - Pattern suggestions (args: problem description)
 - `create-adr` - ADR creation (args: decision topic)
 
-**Prompt format** (JSON in `prompts/`):
+**Prompt format** (JSON in `mcp/prompts/`):
 - Template variables: `{{argumentName}}`
 - Resource embedding: `{{resource:architecture://patterns/*}}`
 - Hot-reload on file changes
@@ -70,7 +70,7 @@ Use `architecture://` scheme:
 
 - Documents cached in-memory on startup
 - Prompts loaded into registry on startup
-- `fsnotify` watches `docs/` and `prompts/` for changes
+- `fsnotify` watches `mcp/resources/` and `mcp/prompts/` for changes
 - Auto-invalidate on create/modify/delete (within 2 seconds)
 - Thread-safe with `sync.RWMutex`
 
@@ -84,7 +84,7 @@ Use `architecture://` scheme:
 ## Security
 
 **Critical rules**:
-- Never expose paths outside `docs/` directory
+- Never expose paths outside `mcp/resources/` directory
 - Validate all URIs before filesystem access
 - Run as non-root (UID 1001)
 - No network listeners (stdio only)
