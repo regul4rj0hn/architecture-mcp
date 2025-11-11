@@ -1204,15 +1204,17 @@ func (s *MCPServer) handlePerformanceMetrics(message *models.MCPMessage) *models
 
 	// Collect performance metrics from various components
 	cacheMetrics := s.cache.GetPerformanceMetrics()
+	promptMetrics := s.promptManager.GetPerformanceMetrics()
 
 	// Add server-level metrics
 	serverMetrics := map[string]interface{}{
-		"server_info":   s.serverInfo,
-		"initialized":   s.initialized,
-		"cache_metrics": cacheMetrics,
-		"goroutines":    runtime.NumGoroutine(),
-		"memory_stats":  getMemoryStats(),
-		"timestamp":     time.Now().Format(time.RFC3339),
+		"server_info":    s.serverInfo,
+		"initialized":    s.initialized,
+		"cache_metrics":  cacheMetrics,
+		"prompt_metrics": promptMetrics,
+		"goroutines":     runtime.NumGoroutine(),
+		"memory_stats":   getMemoryStats(),
+		"timestamp":      time.Now().Format(time.RFC3339),
 	}
 
 	return &models.MCPMessage{

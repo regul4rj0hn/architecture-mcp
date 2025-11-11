@@ -25,18 +25,41 @@ type PromptManager struct {
 	mu            sync.RWMutex
 	logger        *logging.StructuredLogger
 	debounceTimer *time.Timer
+
+	// Performance metrics
+	stats PromptStats
+}
+
+// PromptStats tracks performance metrics for prompt operations
+type PromptStats struct {
+	TotalInvocations      int64
+	FailedInvocations     int64
+	InvocationsByName     map[string]int64
+	TotalRenderTimeMs     int64
+	RenderTimeByName      map[string]int64
+	ResourceEmbeddings    int64
+	ResourceEmbedCacheHit int64
+	mu                    sync.RWMutex
 }
 
 // NewPromptManager creates a new prompt manager
 func NewPromptManager(promptsDir string, cache *cache.DocumentCache, monitor *monitor.FileSystemMonitor) *PromptManager {
-	return &PromptManager{
+	renderer := NewTemplateRenderer(cache)
+	pm := &PromptManager{
 		registry:   make(map[string]*PromptDefinition),
 		promptsDir: promptsDir,
 		cache:      cache,
 		monitor:    monitor,
-		renderer:   NewTemplateRenderer(cache),
+		renderer:   renderer,
 		logger:     logging.NewStructuredLogger("PromptManager"),
+		stats: PromptStats{
+			InvocationsByName: make(map[string]int64),
+			RenderTimeByName:  make(map[string]int64),
+		},
 	}
+	// Set the stats recorder on the renderer
+	renderer.SetStatsRecorder(pm)
+	return pm
 }
 
 // LoadPrompts scans the prompts directory and loads all JSON prompt definitions
@@ -156,14 +179,39 @@ func (pm *PromptManager) ListPrompts() []models.MCPPrompt {
 
 // RenderPrompt validates arguments, renders templates, and embeds resources
 func (pm *PromptManager) RenderPrompt(name string, arguments map[string]interface{}) (*models.MCPPromptsGetResult, error) {
+	startTime := time.Now()
+
+	// Track invocation
+	pm.recordInvocation(name)
+
+	// Sanitize arguments for logging (truncate long values)
+	sanitizedArgs := pm.sanitizeArgumentsForLogging(arguments)
+
+	pm.logger.WithContext("prompt_name", name).
+		WithContext("arguments", sanitizedArgs).
+		Info("Prompt invocation started")
+
 	// Get prompt definition
 	prompt, err := pm.GetPrompt(name)
 	if err != nil {
+		duration := time.Since(startTime)
+		pm.recordFailedInvocation(name, duration)
+		pm.logger.WithError(err).
+			WithContext("prompt_name", name).
+			WithContext("duration_ms", duration.Milliseconds()).
+			Error("Failed to get prompt definition")
 		return nil, err
 	}
 
 	// Validate arguments
 	if err := prompt.ValidateArguments(arguments); err != nil {
+		duration := time.Since(startTime)
+		pm.recordFailedInvocation(name, duration)
+		pm.logger.WithError(err).
+			WithContext("prompt_name", name).
+			WithContext("duration_ms", duration.Milliseconds()).
+			WithContext("arguments", sanitizedArgs).
+			Error("Prompt argument validation failed")
 		return nil, fmt.Errorf("argument validation failed: %w", err)
 	}
 
@@ -174,12 +222,26 @@ func (pm *PromptManager) RenderPrompt(name string, arguments map[string]interfac
 		// Render template with arguments
 		renderedText, err := pm.renderer.RenderTemplate(msgTemplate.Content.Text, arguments)
 		if err != nil {
+			duration := time.Since(startTime)
+			pm.recordFailedInvocation(name, duration)
+			pm.logger.WithError(err).
+				WithContext("prompt_name", name).
+				WithContext("message_index", i).
+				WithContext("duration_ms", duration.Milliseconds()).
+				Error("Failed to render prompt template")
 			return nil, fmt.Errorf("failed to render message %d: %w", i, err)
 		}
 
 		// Embed resources
 		finalText, err := pm.renderer.EmbedResources(renderedText)
 		if err != nil {
+			duration := time.Since(startTime)
+			pm.recordFailedInvocation(name, duration)
+			pm.logger.WithError(err).
+				WithContext("prompt_name", name).
+				WithContext("message_index", i).
+				WithContext("duration_ms", duration.Milliseconds()).
+				Error("Failed to embed resources in prompt")
 			return nil, fmt.Errorf("failed to embed resources in message %d: %w", i, err)
 		}
 
@@ -197,11 +259,35 @@ func (pm *PromptManager) RenderPrompt(name string, arguments map[string]interfac
 		Messages:    messages,
 	}
 
+	duration := time.Since(startTime)
+	pm.recordSuccessfulRender(name, duration)
 	pm.logger.WithContext("prompt_name", name).
 		WithContext("message_count", len(messages)).
-		Debug("Prompt rendered successfully")
+		WithContext("duration_ms", duration.Milliseconds()).
+		WithContext("arguments", sanitizedArgs).
+		Info("Prompt rendered successfully")
 
 	return result, nil
+}
+
+// sanitizeArgumentsForLogging sanitizes argument values for safe logging
+func (pm *PromptManager) sanitizeArgumentsForLogging(arguments map[string]interface{}) map[string]interface{} {
+	sanitized := make(map[string]interface{})
+
+	for key, value := range arguments {
+		if strValue, ok := value.(string); ok {
+			// Truncate long string values
+			if len(strValue) > 100 {
+				sanitized[key] = fmt.Sprintf("%s... [%d chars total]", strValue[:100], len(strValue))
+			} else {
+				sanitized[key] = strValue
+			}
+		} else {
+			sanitized[key] = value
+		}
+	}
+
+	return sanitized
 }
 
 // ReloadPrompts refreshes the prompt registry by reloading all definitions
@@ -263,4 +349,95 @@ func (pm *PromptManager) handleFileEvent(event models.FileEvent) {
 		}
 	})
 	pm.mu.Unlock()
+}
+
+// recordInvocation records a prompt invocation
+func (pm *PromptManager) recordInvocation(name string) {
+	pm.stats.mu.Lock()
+	defer pm.stats.mu.Unlock()
+
+	pm.stats.TotalInvocations++
+	pm.stats.InvocationsByName[name]++
+}
+
+// recordSuccessfulRender records a successful prompt render with duration
+func (pm *PromptManager) recordSuccessfulRender(name string, duration time.Duration) {
+	pm.stats.mu.Lock()
+	defer pm.stats.mu.Unlock()
+
+	durationMs := duration.Milliseconds()
+	pm.stats.TotalRenderTimeMs += durationMs
+	pm.stats.RenderTimeByName[name] += durationMs
+}
+
+// recordFailedInvocation records a failed prompt invocation
+func (pm *PromptManager) recordFailedInvocation(name string, duration time.Duration) {
+	pm.stats.mu.Lock()
+	defer pm.stats.mu.Unlock()
+
+	pm.stats.FailedInvocations++
+	durationMs := duration.Milliseconds()
+	pm.stats.TotalRenderTimeMs += durationMs
+	pm.stats.RenderTimeByName[name] += durationMs
+}
+
+// RecordResourceEmbedding records a resource embedding operation
+func (pm *PromptManager) RecordResourceEmbedding(cacheHit bool) {
+	pm.stats.mu.Lock()
+	defer pm.stats.mu.Unlock()
+
+	pm.stats.ResourceEmbeddings++
+	if cacheHit {
+		pm.stats.ResourceEmbedCacheHit++
+	}
+}
+
+// GetPerformanceMetrics returns performance metrics for prompt operations
+func (pm *PromptManager) GetPerformanceMetrics() map[string]interface{} {
+	pm.mu.RLock()
+	totalPrompts := len(pm.registry)
+	pm.mu.RUnlock()
+
+	pm.stats.mu.RLock()
+	defer pm.stats.mu.RUnlock()
+
+	// Calculate average render time
+	var avgRenderTime float64
+	successfulInvocations := pm.stats.TotalInvocations - pm.stats.FailedInvocations
+	if successfulInvocations > 0 {
+		avgRenderTime = float64(pm.stats.TotalRenderTimeMs) / float64(successfulInvocations)
+	}
+
+	// Calculate resource embedding cache hit rate
+	var resourceCacheHitRate float64
+	if pm.stats.ResourceEmbeddings > 0 {
+		resourceCacheHitRate = float64(pm.stats.ResourceEmbedCacheHit) / float64(pm.stats.ResourceEmbeddings) * 100.0
+	}
+
+	// Copy invocations by name for safe return
+	invocationsByName := make(map[string]int64)
+	for name, count := range pm.stats.InvocationsByName {
+		invocationsByName[name] = count
+	}
+
+	// Calculate average render time by name
+	avgRenderTimeByName := make(map[string]float64)
+	for name, totalTime := range pm.stats.RenderTimeByName {
+		if invocations := pm.stats.InvocationsByName[name]; invocations > 0 {
+			avgRenderTimeByName[name] = float64(totalTime) / float64(invocations)
+		}
+	}
+
+	return map[string]interface{}{
+		"total_prompts_loaded":       totalPrompts,
+		"total_invocations":          pm.stats.TotalInvocations,
+		"successful_invocations":     successfulInvocations,
+		"failed_invocations":         pm.stats.FailedInvocations,
+		"invocations_by_name":        invocationsByName,
+		"avg_render_time_ms":         avgRenderTime,
+		"avg_render_time_by_name_ms": avgRenderTimeByName,
+		"total_render_time_ms":       pm.stats.TotalRenderTimeMs,
+		"resource_embeddings":        pm.stats.ResourceEmbeddings,
+		"resource_cache_hit_rate":    resourceCacheHitRate,
+	}
 }

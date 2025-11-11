@@ -19,14 +19,26 @@ const (
 
 // TemplateRenderer handles template variable substitution and resource embedding
 type TemplateRenderer struct {
-	cache *cache.DocumentCache
+	cache         *cache.DocumentCache
+	statsRecorder StatsRecorder
+}
+
+// StatsRecorder is an interface for recording statistics
+type StatsRecorder interface {
+	RecordResourceEmbedding(cacheHit bool)
 }
 
 // NewTemplateRenderer creates a new template renderer with access to the document cache
 func NewTemplateRenderer(cache *cache.DocumentCache) *TemplateRenderer {
 	return &TemplateRenderer{
-		cache: cache,
+		cache:         cache,
+		statsRecorder: nil, // Will be set later by SetStatsRecorder
 	}
+}
+
+// SetStatsRecorder sets the stats recorder for tracking metrics
+func (tr *TemplateRenderer) SetStatsRecorder(recorder StatsRecorder) {
+	tr.statsRecorder = recorder
 }
 
 var (
@@ -144,6 +156,13 @@ func (tr *TemplateRenderer) ResolveResourcePattern(pattern string) ([]*models.Do
 
 	if len(matchedDocs) == 0 {
 		return nil, fmt.Errorf("no resources found matching pattern: %s", pattern)
+	}
+
+	// Record resource embedding with cache hit (all documents come from cache)
+	if tr.statsRecorder != nil {
+		for range matchedDocs {
+			tr.statsRecorder.RecordResourceEmbedding(true)
+		}
 	}
 
 	return matchedDocs, nil

@@ -133,14 +133,14 @@
     - Add ADR template structure and generation instructions
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 7. Add logging and monitoring
-  - [ ] 7.1 Implement prompt invocation logging
+- [x] 7. Add logging and monitoring
+  - [x] 7.1 Implement prompt invocation logging
     - Add logging for prompt invocations with name, sanitized arguments, and execution duration
     - Use existing StructuredLogger pattern
     - Log errors with full context including prompt name
     - _Requirements: 8.1, 8.3, 9.4_
   
-  - [ ] 7.2 Add performance metrics
+  - [x] 7.2 Add performance metrics
     - Extend handlePerformanceMetrics() to include prompt statistics
     - Track total prompts loaded, invocation count by name, average render time
     - Track resource embedding cache hit rate for prompt operations
