@@ -25,9 +25,10 @@ type MCPServerInfo struct {
 
 // MCPCapabilities represents server capabilities
 type MCPCapabilities struct {
-	Resources *MCPResourceCapabilities `json:"resources,omitempty"`
-	Prompts   *MCPPromptCapabilities   `json:"prompts,omitempty"`
-	Tools     *MCPToolCapabilities     `json:"tools,omitempty"`
+	Resources  *MCPResourceCapabilities   `json:"resources,omitempty"`
+	Prompts    *MCPPromptCapabilities     `json:"prompts,omitempty"`
+	Tools      *MCPToolCapabilities       `json:"tools,omitempty"`
+	Completion *MCPCompletionCapabilities `json:"completion,omitempty"`
 }
 
 // MCPResourceCapabilities represents resource-related capabilities
@@ -92,4 +93,47 @@ type MCPResourcesReadParams struct {
 // MCPResourcesReadResult represents result for resources/read
 type MCPResourcesReadResult struct {
 	Contents []MCPResourceContent `json:"contents"`
+}
+
+// MCPCompletionCapabilities represents completion-related capabilities
+type MCPCompletionCapabilities struct {
+	ArgumentCompletions bool `json:"argumentCompletions"`
+}
+
+// MCPCompletionCompleteParams represents parameters for completion/complete
+type MCPCompletionCompleteParams struct {
+	Ref      MCPCompletionRef       `json:"ref"`
+	Argument MCPCompletionArgument  `json:"argument"`
+	Context  map[string]interface{} `json:"context,omitempty"`
+}
+
+// MCPCompletionRef represents a reference to a prompt
+type MCPCompletionRef struct {
+	Type string `json:"type"` // Must be "ref/prompt"
+	Name string `json:"name"` // Prompt name
+}
+
+// MCPCompletionArgument represents the argument being completed
+type MCPCompletionArgument struct {
+	Name  string `json:"name"`  // Argument name
+	Value string `json:"value"` // Current partial value
+}
+
+// MCPCompletionItem represents a single completion suggestion
+type MCPCompletionItem struct {
+	Value       string `json:"value"`
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// MCPCompletionResult represents the result of completion/complete
+type MCPCompletionResult struct {
+	Completion MCPCompletion `json:"completion"`
+}
+
+// MCPCompletion contains the completion values
+type MCPCompletion struct {
+	Values  []MCPCompletionItem `json:"values"`
+	Total   int                 `json:"total,omitempty"`
+	HasMore bool                `json:"hasMore,omitempty"`
 }

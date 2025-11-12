@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Add completion data models to MCP protocol types
+- [x] 1. Add completion data models to MCP protocol types
   - Create MCPCompletionCompleteParams, MCPCompletionRef, MCPCompletionArgument structs in internal/models/mcp.go
   - Create MCPCompletionItem, MCPCompletionResult, MCPCompletion structs for response format
   - Add MCPCompletionCapabilities struct and integrate into MCPCapabilities
