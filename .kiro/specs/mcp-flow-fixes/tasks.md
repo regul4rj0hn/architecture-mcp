@@ -35,7 +35,7 @@
     - Add logging for completion errors with context
     - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 3. Wire completion endpoint into server message routing
+- [x] 3. Wire completion endpoint into server message routing
   - Add "completion/complete" case to handleMessage switch in internal/server/server.go
   - Update server capabilities to include Completion capability in NewMCPServer
   - Set ArgumentCompletions to true in capability initialization
@@ -74,7 +74,7 @@
     - Update main.go to use new constructor with parsed log level
     - _Requirements: 9.5_
 
-- [ ]* 6. Add unit tests for completion endpoint
+- [x] 6. Add unit tests for completion endpoint
   - Write test for valid pattern_name completion with prefix filtering
   - Write test for invalid ref type error handling
   - Write test for prompt not found error handling

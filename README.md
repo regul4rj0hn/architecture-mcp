@@ -60,6 +60,11 @@ See [Tools Development Guide](docs/tools-guide.md) for detailed schemas, example
 - `tools/list` - List all available executable tools with schemas
 - `tools/call` - Execute a tool with validated arguments
 
+### Completions
+- `completion/complete` - Get autocomplete suggestions for prompt arguments
+  - Supports `pattern_name`, `guideline_name`, and `adr_id` arguments
+  - Provides intelligent prefix-based filtering
+
 Communication via JSON-RPC 2.0 over stdio (local) or TCP (bridge mode).
 
 ## Quick Start
@@ -150,4 +155,5 @@ make help         # Show all available commands
 - [Architecture Overview](docs/architecture.md) - System architecture diagrams including tools subsystem
 - [Tools Development Guide](docs/tools-guide.md) - Complete guide for creating custom tools
 - [Prompts Guide](docs/prompts-guide.md) - Prompt definition format and template syntax
+- [Completions Guide](docs/completions-guide.md) - Autocomplete for prompt arguments
 - [ADR Template](docs/adr-template.md) - Template for Architecture Decision Records

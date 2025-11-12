@@ -121,6 +121,9 @@ func newMCPServerWithOptions(enableMonitor bool) *MCPServer {
 			Tools: &models.MCPToolCapabilities{
 				ListChanged: false,
 			},
+			Completion: &models.MCPCompletionCapabilities{
+				ArgumentCompletions: true,
+			},
 		},
 		initialized: false,
 
@@ -324,6 +327,8 @@ func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage
 		response = s.handleToolsList(message)
 	case "tools/call":
 		response = s.handleToolsCall(message)
+	case "completion/complete":
+		response = s.handleCompletionComplete(message)
 	case "server/performance":
 		response = s.handlePerformanceMetrics(message)
 	default:
