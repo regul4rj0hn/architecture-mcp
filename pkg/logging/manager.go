@@ -1,10 +1,21 @@
 package logging
 
 import (
+	"strings"
 	"sync"
 	"time"
 
 	"mcp-architecture-service/pkg/errors"
+)
+
+// LogLevel represents the logging level
+type LogLevel int
+
+const (
+	LogLevelDEBUG LogLevel = iota
+	LogLevelINFO
+	LogLevelWARN
+	LogLevelERROR
 )
 
 // LoggingManager manages structured logging across the application
@@ -17,6 +28,9 @@ type LoggingManager struct {
 
 	// Statistics
 	stats LoggingStats
+
+	// Log level for filtering
+	logLevel LogLevel
 }
 
 // LoggingStats tracks logging statistics
@@ -37,6 +51,7 @@ func NewLoggingManager() *LoggingManager {
 			MessagesByLevel:  make(map[string]int64),
 			MessagesByLogger: make(map[string]int64),
 		},
+		logLevel: LogLevelINFO, // Default to INFO level
 	}
 }
 
@@ -51,6 +66,7 @@ func (lm *LoggingManager) GetLogger(component string) *StructuredLogger {
 
 	// Create new logger with global context
 	logger := NewStructuredLogger(component)
+	logger.manager = lm // Set reference to manager for log level checks
 
 	// Add global context to the logger
 	for key, value := range lm.globalContext {
@@ -59,6 +75,36 @@ func (lm *LoggingManager) GetLogger(component string) *StructuredLogger {
 
 	lm.loggers[component] = logger
 	return logger
+}
+
+// SetLogLevel sets the logging level for all loggers
+// Accepts any string and defaults to INFO for invalid levels
+func (lm *LoggingManager) SetLogLevel(level string) {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	// Convert to uppercase for case-insensitive matching
+	upperLevel := strings.ToUpper(level)
+
+	switch upperLevel {
+	case "DEBUG":
+		lm.logLevel = LogLevelDEBUG
+	case "INFO":
+		lm.logLevel = LogLevelINFO
+	case "WARN":
+		lm.logLevel = LogLevelWARN
+	case "ERROR":
+		lm.logLevel = LogLevelERROR
+	default:
+		lm.logLevel = LogLevelINFO
+	}
+}
+
+// shouldLog checks if a message at the given level should be logged
+func (lm *LoggingManager) shouldLog(level LogLevel) bool {
+	lm.mutex.RLock()
+	defer lm.mutex.RUnlock()
+	return level >= lm.logLevel
 }
 
 // SetGlobalContext sets global context that will be added to all log entries

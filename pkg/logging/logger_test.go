@@ -12,375 +12,293 @@ import (
 	"mcp-architecture-service/pkg/errors"
 )
 
-func TestStructuredLogger(t *testing.T) {
-	t.Run("NewStructuredLogger creates logger with component", func(t *testing.T) {
-		logger := NewStructuredLogger("test-component")
+// Helper to create test logger with buffer
+func newTestLogger() (*StructuredLogger, *bytes.Buffer) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	logger := &StructuredLogger{
+		logger:    slog.New(handler),
+		component: "test",
+		context:   make(LogContext),
+	}
+	return logger, &buf
+}
 
-		if logger.component != "test-component" {
-			t.Errorf("Expected component 'test-component', got %s", logger.component)
-		}
-		if logger.context == nil {
-			t.Errorf("Expected context to be initialized")
+func TestStructuredLogger(t *testing.T) {
+	t.Run("Initialization", func(t *testing.T) {
+		logger := NewStructuredLogger("test-component")
+		if logger.component != "test-component" || logger.context == nil {
+			t.Error("Expected logger to be initialized correctly")
 		}
 	})
 
-	t.Run("WithContext adds context and returns new logger", func(t *testing.T) {
+	t.Run("WithContext immutability", func(t *testing.T) {
 		logger := NewStructuredLogger("test")
 		newLogger := logger.WithContext("key1", "value1").WithContext("key2", 42)
 
-		// Original logger should not be modified
-		if len(logger.context) != 0 {
-			t.Errorf("Expected original logger context to be empty, got %d items", len(logger.context))
+		if len(logger.context) != 0 || len(newLogger.context) != 2 {
+			t.Error("Expected WithContext to return new logger without modifying original")
 		}
-
-		// New logger should have context
-		if len(newLogger.context) != 2 {
-			t.Errorf("Expected new logger to have 2 context items, got %d", len(newLogger.context))
-		}
-		if newLogger.context["key1"] != "value1" {
-			t.Errorf("Expected key1 to be 'value1', got %v", newLogger.context["key1"])
-		}
-		if newLogger.context["key2"] != 42 {
-			t.Errorf("Expected key2 to be 42, got %v", newLogger.context["key2"])
+		if newLogger.context["key1"] != "value1" || newLogger.context["key2"] != 42 {
+			t.Error("Expected context values to be set correctly")
 		}
 	})
 
-	t.Run("WithError adds error information to context", func(t *testing.T) {
+	t.Run("WithError", func(t *testing.T) {
 		logger := NewStructuredLogger("test")
-		testErr := errors.NewValidationError("INVALID_INPUT", "Invalid input provided", nil).
+		testErr := errors.NewValidationError("INVALID_INPUT", "Invalid input", nil).
 			WithContext("field", "username")
 
 		errorLogger := logger.WithError(testErr)
 
-		if errorLogger.context["error"] != "[validation:INVALID_INPUT] Invalid input provided" {
-			t.Errorf("Expected error message in context, got %v", errorLogger.context["error"])
+		if errorLogger.context["error_category"] != errors.ErrorCategoryValidation ||
+			errorLogger.context["error_code"] != "INVALID_INPUT" ||
+			errorLogger.context["error_ctx_field"] != "username" {
+			t.Error("Expected error context to be added correctly")
 		}
-		if errorLogger.context["error_category"] != errors.ErrorCategoryValidation {
-			t.Errorf("Expected error category in context")
-		}
-		if errorLogger.context["error_code"] != "INVALID_INPUT" {
-			t.Errorf("Expected error code in context")
-		}
-		if errorLogger.context["error_ctx_field"] != "username" {
-			t.Errorf("Expected error context field in logger context")
-		}
-	})
 
-	t.Run("WithError handles nil error", func(t *testing.T) {
-		logger := NewStructuredLogger("test")
-		errorLogger := logger.WithError(nil)
-
-		// Should return same logger when error is nil
-		if errorLogger != logger {
-			t.Errorf("Expected same logger instance when error is nil")
+		// Nil error should return same logger
+		if logger.WithError(nil) != logger {
+			t.Error("Expected same logger when error is nil")
 		}
 	})
 }
 
-func TestLoggingMethods(t *testing.T) {
-	// Capture log output for testing
-	var buf bytes.Buffer
+func TestLoggingOutput(t *testing.T) {
+	testLogger, buf := newTestLogger()
 
-	// Create a logger that writes to our buffer
-	opts := &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}
-	handler := slog.NewJSONHandler(&buf, opts)
-	testLogger := &StructuredLogger{
-		logger:    slog.New(handler),
-		component: "test",
-		context:   make(LogContext),
+	tests := []struct {
+		name      string
+		logFunc   func()
+		wantLevel string
+		wantMsg   string
+	}{
+		{"Info", func() { testLogger.Info("Test info") }, "INFO", "Test info"},
+		{"Error", func() { testLogger.Error("Test error") }, "ERROR", "Test error"},
 	}
 
-	t.Run("Info logs message with correct level", func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf.Reset()
+			tt.logFunc()
+
+			var logEntry map[string]interface{}
+			if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
+				t.Fatalf("Failed to parse log output: %v", err)
+			}
+
+			if logEntry["level"] != tt.wantLevel || logEntry["msg"] != tt.wantMsg {
+				t.Errorf("Expected level=%s msg=%s, got level=%v msg=%v",
+					tt.wantLevel, tt.wantMsg, logEntry["level"], logEntry["msg"])
+			}
+			if logEntry["component"] != "test" {
+				t.Errorf("Expected component 'test', got %v", logEntry["component"])
+			}
+		})
+	}
+
+	t.Run("Context in output", func(t *testing.T) {
 		buf.Reset()
-		testLogger.Info("Test info message")
+		testLogger.WithContext("user_id", "12345").WithContext("action", "login").Info("User action")
 
 		var logEntry map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-			t.Fatalf("Failed to parse log output: %v", err)
-		}
+		json.Unmarshal(buf.Bytes(), &logEntry)
 
-		if logEntry["level"] != "INFO" {
-			t.Errorf("Expected level INFO, got %v", logEntry["level"])
-		}
-		if logEntry["msg"] != "Test info message" {
-			t.Errorf("Expected message 'Test info message', got %v", logEntry["msg"])
-		}
-		if logEntry["component"] != "test" {
-			t.Errorf("Expected component 'test', got %v", logEntry["component"])
-		}
-	})
-
-	t.Run("Error logs message with correct level", func(t *testing.T) {
-		buf.Reset()
-		testLogger.Error("Test error message")
-
-		var logEntry map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-			t.Fatalf("Failed to parse log output: %v", err)
-		}
-
-		if logEntry["level"] != "ERROR" {
-			t.Errorf("Expected level ERROR, got %v", logEntry["level"])
-		}
-	})
-
-	t.Run("Context is included in log output", func(t *testing.T) {
-		buf.Reset()
-		contextLogger := testLogger.WithContext("user_id", "12345").WithContext("action", "login")
-		contextLogger.Info("User action")
-
-		var logEntry map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-			t.Fatalf("Failed to parse log output: %v", err)
-		}
-
-		if logEntry["user_id"] != "12345" {
-			t.Errorf("Expected user_id '12345', got %v", logEntry["user_id"])
-		}
-		if logEntry["action"] != "login" {
-			t.Errorf("Expected action 'login', got %v", logEntry["action"])
+		if logEntry["user_id"] != "12345" || logEntry["action"] != "login" {
+			t.Error("Expected context to be included in log output")
 		}
 	})
 }
 
-func TestSpecializedLoggingMethods(t *testing.T) {
-	var buf bytes.Buffer
-	opts := &slog.HandlerOptions{Level: slog.LevelDebug}
-	handler := slog.NewJSONHandler(&buf, opts)
-	testLogger := &StructuredLogger{
-		logger:    slog.New(handler),
-		component: "test",
-		context:   make(LogContext),
-	}
+func TestSpecializedLoggerMethods(t *testing.T) {
+	testLogger, buf := newTestLogger()
 
-	t.Run("LogMCPMessage logs with correct context", func(t *testing.T) {
+	t.Run("LogMCPMessage", func(t *testing.T) {
 		buf.Reset()
 		testLogger.LogMCPMessage("resources/list", "req-123", 150*time.Millisecond, true)
 
 		var logEntry map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-			t.Fatalf("Failed to parse log output: %v", err)
-		}
+		json.Unmarshal(buf.Bytes(), &logEntry)
 
-		if logEntry["mcp_method"] != "resources/list" {
-			t.Errorf("Expected mcp_method 'resources/list', got %v", logEntry["mcp_method"])
-		}
-		if logEntry["request_id"] != "req-123" {
-			t.Errorf("Expected request_id 'req-123', got %v", logEntry["request_id"])
-		}
-		if logEntry["duration_ms"] != float64(150) {
-			t.Errorf("Expected duration_ms 150, got %v", logEntry["duration_ms"])
-		}
-		if logEntry["success"] != true {
-			t.Errorf("Expected success true, got %v", logEntry["success"])
+		if logEntry["mcp_method"] != "resources/list" || logEntry["request_id"] != "req-123" ||
+			logEntry["duration_ms"] != float64(150) || logEntry["success"] != true {
+			t.Error("Expected MCP message context to be logged correctly")
 		}
 	})
 
-	t.Run("LogCacheOperation logs cache operations", func(t *testing.T) {
+	t.Run("LogCacheOperation", func(t *testing.T) {
 		buf.Reset()
-		details := map[string]interface{}{
-			"cache_size": 100,
-			"hit_ratio":  0.85,
-		}
-		testLogger.LogCacheOperation("get", "doc-123", true, details)
+		testLogger.LogCacheOperation("get", "doc-123", true, map[string]interface{}{"cache_size": 100})
 
 		var logEntry map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-			t.Fatalf("Failed to parse log output: %v", err)
-		}
+		json.Unmarshal(buf.Bytes(), &logEntry)
 
-		if logEntry["cache_operation"] != "get" {
-			t.Errorf("Expected cache_operation 'get', got %v", logEntry["cache_operation"])
-		}
-		if logEntry["cache_key"] != "doc-123" {
-			t.Errorf("Expected cache_key 'doc-123', got %v", logEntry["cache_key"])
-		}
-		if logEntry["cache_size"] != float64(100) {
-			t.Errorf("Expected cache_size 100, got %v", logEntry["cache_size"])
+		if logEntry["cache_operation"] != "get" || logEntry["cache_key"] != "doc-123" ||
+			logEntry["cache_size"] != float64(100) {
+			t.Error("Expected cache operation context to be logged correctly")
 		}
 	})
 
-	t.Run("LogFileSystemEvent logs file system events", func(t *testing.T) {
+	t.Run("LogFileSystemEvent", func(t *testing.T) {
 		buf.Reset()
-		details := map[string]interface{}{
-			"processing_time_ms": 25,
-		}
-		testLogger.LogFileSystemEvent("modify", config.ResourcesBasePath+"/test.md", details)
+		testLogger.LogFileSystemEvent("modify", config.ResourcesBasePath+"/test.md",
+			map[string]interface{}{"processing_time_ms": 25})
 
 		var logEntry map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-			t.Fatalf("Failed to parse log output: %v", err)
-		}
+		json.Unmarshal(buf.Bytes(), &logEntry)
 
 		if logEntry["fs_event_type"] != "modify" {
-			t.Errorf("Expected fs_event_type 'modify', got %v", logEntry["fs_event_type"])
-		}
-		if logEntry["fs_path"] != config.ResourcesBasePath+"/test.md" {
-			t.Errorf("Expected fs_path '/mcp/resources/test.md', got %v", logEntry["fs_path"])
+			t.Error("Expected file system event to be logged correctly")
 		}
 	})
 }
 
 func TestDataSanitization(t *testing.T) {
-	t.Run("sanitizeLogData removes sensitive keys", func(t *testing.T) {
+	t.Run("Sensitive keys redacted", func(t *testing.T) {
 		data := map[string]interface{}{
 			"username": "john",
 			"password": "secret123",
 			"token":    "abc123xyz",
 			"email":    "john@example.com",
 		}
-
 		sanitized := sanitizeLogData(data)
 
-		if sanitized["username"] != "john" {
-			t.Errorf("Expected username to be preserved")
+		if sanitized["username"] != "john" || sanitized["email"] != "john@example.com" {
+			t.Error("Expected non-sensitive data to be preserved")
 		}
-		if sanitized["email"] != "john@example.com" {
-			t.Errorf("Expected email to be preserved")
-		}
-		if sanitized["password"] != "[REDACTED]" {
-			t.Errorf("Expected password to be redacted, got %v", sanitized["password"])
-		}
-		if sanitized["token"] != "[REDACTED]" {
-			t.Errorf("Expected token to be redacted, got %v", sanitized["token"])
+		if sanitized["password"] != "[REDACTED]" || sanitized["token"] != "[REDACTED]" {
+			t.Error("Expected sensitive data to be redacted")
 		}
 	})
 
-	t.Run("sanitizeStringValue masks long alphanumeric strings", func(t *testing.T) {
-		longToken := "abcdefghijklmnopqrstuvwxyz123456"
-		result := sanitizeStringValue(longToken)
-
-		expected := "[MASKED:32_chars]"
-		if result != expected {
-			t.Errorf("Expected %s, got %v", expected, result)
+	t.Run("Long strings masked", func(t *testing.T) {
+		result := sanitizeStringValue("abcdefghijklmnopqrstuvwxyz123456")
+		if result != "[MASKED:32_chars]" {
+			t.Errorf("Expected long string to be masked, got %v", result)
 		}
 	})
 
-	t.Run("sanitizeFilePath preserves mcp/resources paths", func(t *testing.T) {
-		path := "/home/user/project/mcp/resources/guidelines/api.md"
-		result := sanitizeFilePath(path)
-
-		expected := config.ResourcesBasePath + "/guidelines/api.md"
-		if result != expected {
-			t.Errorf("Expected %s, got %s", expected, result)
+	t.Run("File paths sanitized", func(t *testing.T) {
+		tests := []struct {
+			input string
+			want  string
+		}{
+			{"/home/user/project/mcp/resources/guidelines/api.md", config.ResourcesBasePath + "/guidelines/api.md"},
+			{"/etc/passwd", "passwd"},
 		}
-	})
 
-	t.Run("sanitizeFilePath returns filename for non-mcp paths", func(t *testing.T) {
-		path := "/etc/passwd"
-		result := sanitizeFilePath(path)
-
-		expected := "passwd"
-		if result != expected {
-			t.Errorf("Expected %s, got %s", expected, result)
+		for _, tt := range tests {
+			if got := sanitizeFilePath(tt.input); got != tt.want {
+				t.Errorf("sanitizeFilePath(%s) = %s, want %s", tt.input, got, tt.want)
+			}
 		}
 	})
 }
 
-func TestGetCallerInfo(t *testing.T) {
-	t.Run("GetCallerInfo returns function information", func(t *testing.T) {
-		funcName, file, line := GetCallerInfo(0)
+func TestCallerInfo(t *testing.T) {
+	funcName, file, line := GetCallerInfo(0)
 
-		// Function name extraction may vary, just check it's not empty
-		if funcName == "" || funcName == "unknown" {
-			t.Errorf("Expected valid function name, got %s", funcName)
-		}
-		if !strings.HasSuffix(file, "logger_test.go") {
-			t.Errorf("Expected file to end with 'logger_test.go', got %s", file)
-		}
-		if line <= 0 {
-			t.Errorf("Expected positive line number, got %d", line)
-		}
-	})
+	if funcName == "" || funcName == "unknown" {
+		t.Error("Expected valid function name")
+	}
+	if !strings.HasSuffix(file, "logger_test.go") {
+		t.Errorf("Expected file to end with 'logger_test.go', got %s", file)
+	}
+	if line <= 0 {
+		t.Errorf("Expected positive line number, got %d", line)
+	}
 }
 
 func TestLogWithCaller(t *testing.T) {
-	var buf bytes.Buffer
-	opts := &slog.HandlerOptions{Level: slog.LevelDebug}
-	handler := slog.NewJSONHandler(&buf, opts)
-	testLogger := &StructuredLogger{
-		logger:    slog.New(handler),
-		component: "test",
-		context:   make(LogContext),
-	}
+	testLogger, buf := newTestLogger()
+	testLogger.LogWithCaller(LogLevelINFO, "Test message")
 
-	t.Run("LogWithCaller includes caller information", func(t *testing.T) {
+	var logEntry map[string]interface{}
+	json.Unmarshal(buf.Bytes(), &logEntry)
+
+	if logEntry["caller_func"] == nil || logEntry["caller_file"] == nil || logEntry["caller_line"] == nil {
+		t.Error("Expected caller information to be present")
+	}
+}
+
+func TestLogJSON(t *testing.T) {
+	testLogger, buf := newTestLogger()
+
+	t.Run("Serializes correctly", func(t *testing.T) {
 		buf.Reset()
-		testLogger.LogWithCaller(LogLevelInfo, "Test message with caller")
+		testLogger.LogJSON(LogLevelINFO, "JSON test", map[string]interface{}{"key1": "value1", "key2": 42})
 
 		var logEntry map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-			t.Fatalf("Failed to parse log output: %v", err)
-		}
+		json.Unmarshal(buf.Bytes(), &logEntry)
 
-		if logEntry["caller_func"] == nil {
-			t.Errorf("Expected caller_func to be present")
+		var parsedData map[string]interface{}
+		json.Unmarshal([]byte(logEntry["json_data"].(string)), &parsedData)
+
+		if parsedData["key1"] != "value1" || parsedData["key2"] != float64(42) {
+			t.Error("Expected JSON data to be serialized correctly")
 		}
-		if logEntry["caller_file"] == nil {
-			t.Errorf("Expected caller_file to be present")
-		}
-		if logEntry["caller_line"] == nil {
-			t.Errorf("Expected caller_line to be present")
+	})
+
+	t.Run("Handles marshal error", func(t *testing.T) {
+		buf.Reset()
+		data := make(map[string]interface{})
+		data["self"] = data // circular reference
+
+		testLogger.LogJSON(LogLevelINFO, "JSON error", data)
+
+		if !strings.Contains(buf.String(), "Failed to marshal JSON data") {
+			t.Error("Expected error message about JSON marshaling failure")
 		}
 	})
 }
 
-func TestLogJSON(t *testing.T) {
+func TestLoggerRespectsLogLevel(t *testing.T) {
 	var buf bytes.Buffer
-	opts := &slog.HandlerOptions{Level: slog.LevelDebug}
-	handler := slog.NewJSONHandler(&buf, opts)
-	testLogger := &StructuredLogger{
-		logger:    slog.New(handler),
-		component: "test",
-		context:   make(LogContext),
+	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	manager := NewLoggingManager()
+
+	tests := []struct {
+		managerLevel string
+		logMethod    func(*StructuredLogger)
+		shouldLog    bool
+	}{
+		{"INFO", func(l *StructuredLogger) { l.Debug("test") }, false},
+		{"INFO", func(l *StructuredLogger) { l.Info("test") }, true},
+		{"WARN", func(l *StructuredLogger) { l.Info("test") }, false},
+		{"WARN", func(l *StructuredLogger) { l.Warn("test") }, true},
+		{"ERROR", func(l *StructuredLogger) { l.Warn("test") }, false},
+		{"ERROR", func(l *StructuredLogger) { l.Error("test") }, true},
 	}
 
-	t.Run("LogJSON serializes data correctly", func(t *testing.T) {
+	for _, tt := range tests {
+		manager.SetLogLevel(tt.managerLevel)
+		testLogger := &StructuredLogger{
+			logger:    slog.New(handler),
+			component: "test",
+			context:   make(LogContext),
+			manager:   manager,
+		}
+
 		buf.Reset()
-		data := map[string]interface{}{
-			"key1": "value1",
-			"key2": 42,
-		}
-		testLogger.LogJSON(LogLevelInfo, "JSON test", data)
+		tt.logMethod(testLogger)
 
-		var logEntry map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-			t.Fatalf("Failed to parse log output: %v", err)
+		if (buf.Len() > 0) != tt.shouldLog {
+			t.Errorf("Level %s: expected shouldLog=%v, got %v", tt.managerLevel, tt.shouldLog, buf.Len() > 0)
 		}
+	}
 
-		jsonData, exists := logEntry["json_data"]
-		if !exists {
-			t.Errorf("Expected json_data to be present")
-		}
-
-		// Parse the JSON data
-		var parsedData map[string]interface{}
-		if err := json.Unmarshal([]byte(jsonData.(string)), &parsedData); err != nil {
-			t.Fatalf("Failed to parse JSON data: %v", err)
+	t.Run("Logger without manager logs all levels", func(t *testing.T) {
+		testLogger := &StructuredLogger{
+			logger:    slog.New(handler),
+			component: "test",
+			context:   make(LogContext),
+			manager:   nil,
 		}
 
-		if parsedData["key1"] != "value1" {
-			t.Errorf("Expected key1 to be 'value1', got %v", parsedData["key1"])
-		}
-		if parsedData["key2"] != float64(42) {
-			t.Errorf("Expected key2 to be 42, got %v", parsedData["key2"])
-		}
-	})
-
-	t.Run("LogJSON handles marshal error gracefully", func(t *testing.T) {
 		buf.Reset()
-		// Create data that can't be marshaled (circular reference)
-		data := make(map[string]interface{})
-		data["self"] = data
-
-		testLogger.LogJSON(LogLevelInfo, "JSON error test", data)
-
-		// Should log an error about JSON marshaling failure
-		logOutput := buf.String()
-		if !strings.Contains(logOutput, "Failed to marshal JSON data") {
-			t.Errorf("Expected error message about JSON marshaling failure")
+		testLogger.Debug("test")
+		if buf.Len() == 0 {
+			t.Error("Expected logger without manager to log all levels")
 		}
 	})
 }

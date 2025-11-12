@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -11,6 +12,10 @@ import (
 )
 
 func main() {
+	// Parse command-line flags
+	logLevel := flag.String("log-level", "INFO", "Logging level (DEBUG, INFO, WARN, ERROR)")
+	flag.Parse()
+
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -19,8 +24,8 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Initialize and start MCP server
-	mcpServer := server.NewMCPServer()
+	// Initialize and start MCP server with log level
+	mcpServer := server.NewMCPServerWithLogLevel(*logLevel)
 
 	// Start server in a goroutine
 	go func() {

@@ -48,27 +48,27 @@
   - Return nil instead of logging when shutdown flag is set
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 5. Add logging level configuration
-  - [ ] 5.1 Add log level support to logging manager
+- [x] 5. Add logging level configuration
+  - [x] 5.1 Add log level support to logging manager
     - Add LogLevel type and constants (DEBUG, INFO, WARN, ERROR) to pkg/logging/manager.go
     - Add logLevel field to LoggingManager struct
     - Implement SetLogLevel method with string-to-enum conversion
     - Implement shouldLog method for level filtering
     - _Requirements: 9.2, 9.5_
   
-  - [ ] 5.2 Update logger to respect log level
+  - [x] 5.2 Update logger to respect log level
     - Modify Debug, Info, Warn, Error methods in pkg/logging/logger.go to check shouldLog
     - Return early if log level is below threshold
     - _Requirements: 9.5, 9.6, 9.7_
   
-  - [ ] 5.3 Add command-line flag parsing
+  - [x] 5.3 Add command-line flag parsing
     - Add flag import and --log-level flag to cmd/mcp-server/main.go
     - Validate log level against allowed values (DEBUG, INFO, WARN, ERROR)
     - Exit with error message for invalid log levels
     - Default to INFO when flag not specified
     - _Requirements: 9.1, 9.3, 9.4_
   
-  - [ ] 5.4 Create server constructor with log level
+  - [x] 5.4 Create server constructor with log level
     - Add NewMCPServerWithLogLevel function to internal/server/server.go
     - Call SetLogLevel on loggingManager during initialization
     - Update main.go to use new constructor with parsed log level
@@ -89,7 +89,7 @@
   - Write test for shutdown flag preventing error logging
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ]* 8. Add unit tests for logging configuration
+- [x] 8. Add unit tests for logging configuration
   - Write test for SetLogLevel with valid levels
   - Write test for shouldLog filtering at different levels
   - Write test for logger methods respecting log level

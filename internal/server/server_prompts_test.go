@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"mcp-architecture-service/internal/models"
+	"mcp-architecture-service/pkg/logging"
 	"mcp-architecture-service/pkg/prompts"
 )
 
@@ -46,7 +47,8 @@ func TestHandlePromptsList(t *testing.T) {
 	}
 
 	// Update prompt manager to use test directory
-	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor)
+	logger := logging.NewStructuredLogger("test")
+	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
 
 	// Load prompts from the test directory
 	if err := server.promptManager.LoadPrompts(); err != nil {
@@ -141,7 +143,8 @@ func TestHandlePromptsGet(t *testing.T) {
 	}
 
 	// Update prompt manager to use test directory
-	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor)
+	logger := logging.NewStructuredLogger("test")
+	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
 
 	// Load prompts from the test directory
 	if err := server.promptManager.LoadPrompts(); err != nil {
@@ -246,7 +249,8 @@ func TestHandlePromptsGetErrors(t *testing.T) {
 	}
 
 	// Update prompt manager to use test directory
-	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor)
+	logger := logging.NewStructuredLogger("test")
+	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
 
 	// Load prompts
 	if err := server.promptManager.LoadPrompts(); err != nil {
@@ -363,7 +367,8 @@ func TestPromptsIntegrationFlow(t *testing.T) {
 	}
 
 	// Update prompt manager to use test directory
-	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor)
+	logger := logging.NewStructuredLogger("test")
+	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
 
 	// Load prompts
 	if err := server.promptManager.LoadPrompts(); err != nil {

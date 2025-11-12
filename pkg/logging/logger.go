@@ -14,16 +14,6 @@ import (
 	"mcp-architecture-service/pkg/errors"
 )
 
-// LogLevel represents the severity level of a log entry
-type LogLevel string
-
-const (
-	LogLevelDebug LogLevel = "DEBUG"
-	LogLevelInfo  LogLevel = "INFO"
-	LogLevelWarn  LogLevel = "WARN"
-	LogLevelError LogLevel = "ERROR"
-)
-
 // LogContext represents contextual information for log entries
 type LogContext map[string]interface{}
 
@@ -32,6 +22,7 @@ type StructuredLogger struct {
 	logger    *slog.Logger
 	component string
 	context   LogContext
+	manager   *LoggingManager // Reference to manager for log level checks
 }
 
 // NewStructuredLogger creates a new structured logger
@@ -81,6 +72,7 @@ func (sl *StructuredLogger) WithContext(key string, value interface{}) *Structur
 		logger:    sl.logger,
 		component: sl.component,
 		context:   make(LogContext),
+		manager:   sl.manager, // Preserve manager reference
 	}
 
 	// Copy existing context
@@ -136,21 +128,33 @@ func (sl *StructuredLogger) buildLogAttributes() []slog.Attr {
 
 // Debug logs a debug message
 func (sl *StructuredLogger) Debug(message string) {
+	if sl.manager != nil && !sl.manager.shouldLog(LogLevelDEBUG) {
+		return
+	}
 	sl.logger.LogAttrs(context.Background(), slog.LevelDebug, message, sl.buildLogAttributes()...)
 }
 
 // Info logs an info message
 func (sl *StructuredLogger) Info(message string) {
+	if sl.manager != nil && !sl.manager.shouldLog(LogLevelINFO) {
+		return
+	}
 	sl.logger.LogAttrs(context.Background(), slog.LevelInfo, message, sl.buildLogAttributes()...)
 }
 
 // Warn logs a warning message
 func (sl *StructuredLogger) Warn(message string) {
+	if sl.manager != nil && !sl.manager.shouldLog(LogLevelWARN) {
+		return
+	}
 	sl.logger.LogAttrs(context.Background(), slog.LevelWarn, message, sl.buildLogAttributes()...)
 }
 
 // Error logs an error message
 func (sl *StructuredLogger) Error(message string) {
+	if sl.manager != nil && !sl.manager.shouldLog(LogLevelERROR) {
+		return
+	}
 	sl.logger.LogAttrs(context.Background(), slog.LevelError, message, sl.buildLogAttributes()...)
 }
 
@@ -376,13 +380,13 @@ func (sl *StructuredLogger) LogWithCaller(level LogLevel, message string) {
 		WithContext("caller_line", line)
 
 	switch level {
-	case LogLevelDebug:
+	case LogLevelDEBUG:
 		logger.Debug(message)
-	case LogLevelInfo:
+	case LogLevelINFO:
 		logger.Info(message)
-	case LogLevelWarn:
+	case LogLevelWARN:
 		logger.Warn(message)
-	case LogLevelError:
+	case LogLevelERROR:
 		logger.Error(message)
 	}
 }
@@ -398,13 +402,13 @@ func (sl *StructuredLogger) LogJSON(level LogLevel, message string, data interfa
 	logger := sl.WithContext("json_data", string(jsonData))
 
 	switch level {
-	case LogLevelDebug:
+	case LogLevelDEBUG:
 		logger.Debug(message)
-	case LogLevelInfo:
+	case LogLevelINFO:
 		logger.Info(message)
-	case LogLevelWarn:
+	case LogLevelWARN:
 		logger.Warn(message)
-	case LogLevelError:
+	case LogLevelERROR:
 		logger.Error(message)
 	}
 }

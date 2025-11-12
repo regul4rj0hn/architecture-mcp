@@ -58,6 +58,13 @@ func NewMCPServer() *MCPServer {
 	return newMCPServerWithOptions(true)
 }
 
+// NewMCPServerWithLogLevel creates a new MCP server with specified log level
+func NewMCPServerWithLogLevel(logLevel string) *MCPServer {
+	server := newMCPServerWithOptions(true)
+	server.loggingManager.SetLogLevel(logLevel)
+	return server
+}
+
 // newMCPServerWithOptions creates a new MCP server with optional components
 // enableMonitor controls whether file system monitoring is enabled (disabled for benchmarks)
 func newMCPServerWithOptions(enableMonitor bool) *MCPServer {
@@ -95,7 +102,8 @@ func newMCPServerWithOptions(enableMonitor bool) *MCPServer {
 	}
 
 	// Initialize prompt manager
-	promptManager := prompts.NewPromptManager(config.PromptsBasePath, docCache, fileMonitor)
+	promptLogger := loggingManager.GetLogger("prompts")
+	promptManager := prompts.NewPromptManager(config.PromptsBasePath, docCache, fileMonitor, promptLogger)
 
 	server := &MCPServer{
 		serverInfo: models.MCPServerInfo{

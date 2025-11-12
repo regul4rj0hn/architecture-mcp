@@ -9,6 +9,7 @@ import (
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/cache"
 	"mcp-architecture-service/pkg/config"
+	"mcp-architecture-service/pkg/logging"
 	"mcp-architecture-service/pkg/monitor"
 )
 
@@ -22,7 +23,8 @@ func TestNewPromptManager(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager("prompts", cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager("prompts", cache, monitor, logger)
 
 	if pm == nil {
 		t.Fatal("NewPromptManager() returned nil")
@@ -116,7 +118,8 @@ func TestLoadPrompts(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager(tmpDir, cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager(tmpDir, cache, monitor, logger)
 
 	// Load prompts
 	err = pm.LoadPrompts()
@@ -153,7 +156,8 @@ func TestLoadPromptsNonExistentDirectory(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager("/non/existent/directory", cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager("/non/existent/directory", cache, monitor, logger)
 
 	// Should not error, just log warning
 	err = pm.LoadPrompts()
@@ -176,7 +180,8 @@ func TestGetPrompt(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager("prompts", cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager("prompts", cache, monitor, logger)
 
 	// Add test prompt to registry
 	testPrompt := &PromptDefinition{
@@ -226,7 +231,8 @@ func TestListPrompts(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager("prompts", cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager("prompts", cache, monitor, logger)
 
 	// Add test prompts in non-alphabetical order
 	pm.registry["zebra-prompt"] = &PromptDefinition{
@@ -281,7 +287,8 @@ func TestListPromptsEmpty(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager("prompts", cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager("prompts", cache, monitor, logger)
 
 	prompts := pm.ListPrompts()
 
@@ -313,7 +320,8 @@ func TestRenderPrompt(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager("prompts", cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager("prompts", cache, monitor, logger)
 
 	// Add test prompt
 	pm.registry["test-prompt"] = &PromptDefinition{
@@ -390,7 +398,8 @@ func TestReloadPrompts(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager(tmpDir, cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager(tmpDir, cache, monitor, logger)
 
 	// Initial load (empty directory)
 	err = pm.LoadPrompts()
@@ -445,7 +454,8 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager("prompts", cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager("prompts", cache, monitor, logger)
 
 	// Add test prompt
 	pm.registry["test-prompt"] = &PromptDefinition{
@@ -513,7 +523,8 @@ func TestHandleFileEvent(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager(tmpDir, cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager(tmpDir, cache, monitor, logger)
 
 	// Load initial prompts
 	if err := pm.LoadPrompts(); err != nil {
@@ -552,7 +563,8 @@ func TestHandleFileEventNonJSON(t *testing.T) {
 	}
 	defer monitor.StopWatching()
 
-	pm := NewPromptManager("prompts", cache, monitor)
+	logger := logging.NewStructuredLogger("test")
+	pm := NewPromptManager("prompts", cache, monitor, logger)
 
 	// Simulate non-JSON file event (should be ignored)
 	event := models.FileEvent{

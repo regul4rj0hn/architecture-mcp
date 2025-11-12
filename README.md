@@ -86,7 +86,7 @@ Add to `.vscode/settings/mcp.json` in your workspace:
       "command": "nc",
       "args": ["localhost", "8080"],
       "disabled": false,
-      "autoApprove": ["resources/list", "resources/read", "prompts/list", "prompts/get"]
+      "autoApprove": ["resources/list", "resources/read", "prompts/list", "prompts/get", "tools/list"]
     }
   }
 }

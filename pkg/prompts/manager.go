@@ -44,7 +44,7 @@ type PromptStats struct {
 }
 
 // NewPromptManager creates a new prompt manager
-func NewPromptManager(promptsDir string, cache *cache.DocumentCache, monitor *monitor.FileSystemMonitor) *PromptManager {
+func NewPromptManager(promptsDir string, cache *cache.DocumentCache, monitor *monitor.FileSystemMonitor, logger *logging.StructuredLogger) *PromptManager {
 	renderer := NewTemplateRenderer(cache)
 	pm := &PromptManager{
 		registry:   make(map[string]*PromptDefinition),
@@ -52,7 +52,7 @@ func NewPromptManager(promptsDir string, cache *cache.DocumentCache, monitor *mo
 		cache:      cache,
 		monitor:    monitor,
 		renderer:   renderer,
-		logger:     logging.NewStructuredLogger("PromptManager"),
+		logger:     logger,
 		stats: PromptStats{
 			InvocationsByName: make(map[string]int64),
 			RenderTimeByName:  make(map[string]int64),

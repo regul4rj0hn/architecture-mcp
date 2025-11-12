@@ -1,6 +1,5 @@
 ---
-inclusion: fileMatch
-fileMatchPattern: '*_test.go'
+inclusion: always
 ---
 
 # Testing Standards & Practices
