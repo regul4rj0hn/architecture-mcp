@@ -6,8 +6,8 @@
   - Add MCPCompletionCapabilities struct and integrate into MCPCapabilities
   - _Requirements: 1.1, 1.2, 4.2, 4.3, 4.4, 4.5, 4.6_
 
-- [ ] 2. Implement completion endpoint handler
-  - [ ] 2.1 Add handleCompletionComplete method to internal/server/handlers.go
+- [x] 2. Implement completion endpoint handler
+  - [x] 2.1 Add handleCompletionComplete method to internal/server/handlers.go
     - Parse and validate completion request parameters
     - Validate ref.type is "ref/prompt"
     - Validate prompt exists using promptManager
@@ -15,7 +15,7 @@
     - Format and return MCPCompletionResult
     - _Requirements: 1.1, 1.3, 1.4, 1.5, 4.1, 4.2, 4.3, 4.4, 5.5_
   
-  - [ ] 2.2 Implement completion generation logic
+  - [x] 2.2 Implement completion generation logic
     - Add generateCompletions method that routes by argument name
     - Implement generatePatternCompletions for pattern_name arguments
     - Implement generateGuidelineCompletions for guideline_name arguments
@@ -23,13 +23,13 @@
     - Return empty list for unknown argument types
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
   
-  - [ ] 2.3 Add prefix filtering and metadata extraction
+  - [x] 2.3 Add prefix filtering and metadata extraction
     - Implement case-insensitive prefix matching in completion generators
     - Extract document titles for completion descriptions
     - Format completion items with value, label, and description fields
     - _Requirements: 2.6, 2.7, 3.1, 3.2, 3.3, 3.4, 3.5_
   
-  - [ ] 2.4 Add completion error handling
+  - [x] 2.4 Add completion error handling
     - Implement validateCompletionParams helper method
     - Implement handleCompletionError for structured error responses
     - Add logging for completion errors with context
