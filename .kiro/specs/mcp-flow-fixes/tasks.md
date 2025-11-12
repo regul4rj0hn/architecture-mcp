@@ -41,7 +41,7 @@
   - Set ArgumentCompletions to true in capability initialization
   - _Requirements: 4.1, 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 4. Fix MCP Bridge graceful shutdown
+- [x] 4. Fix MCP Bridge graceful shutdown
   - Add shutdownFlag atomic.Bool field to MCPBridge struct in cmd/mcp-bridge/main.go
   - Update Shutdown method to set flag before closing listener
   - Update Start method Accept loop to check shutdown flag before logging errors

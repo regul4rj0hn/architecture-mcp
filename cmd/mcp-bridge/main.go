@@ -13,18 +13,20 @@ import (
 	"os/exec"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
 
 // MCPBridge creates a TCP server that bridges MCP clients to the stdio-based MCP server
 type MCPBridge struct {
-	port       int
-	host       string
-	serverPath string
-	listener   net.Listener
-	sessions   map[string]*MCPSession
-	mu         sync.RWMutex
+	port         int
+	host         string
+	serverPath   string
+	listener     net.Listener
+	sessions     map[string]*MCPSession
+	mu           sync.RWMutex
+	shutdownFlag atomic.Bool
 }
 
 // MCPSession represents a client session with its own MCP server process
@@ -97,13 +99,19 @@ func (b *MCPBridge) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		default:
 			conn, err := b.listener.Accept()
 			if err != nil {
+				// Check if we're shutting down
+				if b.shutdownFlag.Load() {
+					return nil
+				}
+
+				// Check context again
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
+					return nil
 				default:
 					log.Printf("Accept error: %v", err)
 					continue
@@ -117,6 +125,9 @@ func (b *MCPBridge) Start(ctx context.Context) error {
 }
 
 func (b *MCPBridge) Shutdown() error {
+	// Set shutdown flag BEFORE closing listener
+	b.shutdownFlag.Store(true)
+
 	if b.listener != nil {
 		b.listener.Close()
 	}
