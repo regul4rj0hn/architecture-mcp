@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -92,9 +91,10 @@ func newMCPServerWithOptions(enableMonitor bool) *MCPServer {
 		var err error
 		fileMonitor, err = monitor.NewFileSystemMonitor()
 		if err != nil {
-			loggingManager.LogError("server", err, "Failed to create file system monitor", map[string]interface{}{
-				"component": "file_monitor",
-			})
+			loggingManager.GetLogger("server").
+				WithError(err).
+				WithContext("component", "file_monitor").
+				Error("Failed to create file system monitor")
 			fileMonitor = nil
 			// Record error for degradation management
 			degradationManager.RecordError(errors.ComponentFileSystemMonitoring, err)
@@ -157,53 +157,48 @@ func newMCPServerWithOptions(enableMonitor bool) *MCPServer {
 // Start begins the MCP server operation
 func (s *MCPServer) Start(ctx context.Context) error {
 	startTime := time.Now()
+	startupLogger := s.loggingManager.GetLogger("startup")
 
-	s.loggingManager.LogStartupSequence("server_start", map[string]interface{}{
-		"phase": "initialization",
-	}, 0, true)
+	startupLogger.WithContext("phase", "initialization").Info("Server start")
 
 	// Initialize documentation system
 	docInitStart := time.Now()
 	if err := s.initializeDocumentationSystem(ctx); err != nil {
-		s.loggingManager.LogStartupSequence("documentation_init", map[string]interface{}{
-			"error": err.Error(),
-		}, time.Since(docInitStart), false)
+		startupLogger.WithContext("duration_ms", time.Since(docInitStart).Milliseconds()).
+			WithError(err).Error("Documentation init failed")
 		s.logger.WithError(err).Warn("Failed to initialize documentation system")
 	} else {
-		s.loggingManager.LogStartupSequence("documentation_init", map[string]interface{}{},
-			time.Since(docInitStart), true)
+		startupLogger.WithContext("duration_ms", time.Since(docInitStart).Milliseconds()).
+			Info("Documentation init completed")
 	}
 
 	// Initialize prompts system
 	promptInitStart := time.Now()
 	if err := s.initializePromptsSystem(); err != nil {
-		s.loggingManager.LogStartupSequence("prompts_init", map[string]interface{}{
-			"error": err.Error(),
-		}, time.Since(promptInitStart), false)
+		startupLogger.WithContext("duration_ms", time.Since(promptInitStart).Milliseconds()).
+			WithError(err).Error("Prompts init failed")
 		s.logger.WithError(err).Warn("Failed to initialize prompts system")
 	} else {
-		s.loggingManager.LogStartupSequence("prompts_init", map[string]interface{}{},
-			time.Since(promptInitStart), true)
+		startupLogger.WithContext("duration_ms", time.Since(promptInitStart).Milliseconds()).
+			Info("Prompts init completed")
 	}
 
 	// Initialize tools system
 	toolsInitStart := time.Now()
 	if err := s.initializeToolsSystem(); err != nil {
-		s.loggingManager.LogStartupSequence("tools_init", map[string]interface{}{
-			"error": err.Error(),
-		}, time.Since(toolsInitStart), false)
+		startupLogger.WithContext("duration_ms", time.Since(toolsInitStart).Milliseconds()).
+			WithError(err).Error("Tools init failed")
 		s.logger.WithError(err).Warn("Failed to initialize tools system")
 	} else {
-		s.loggingManager.LogStartupSequence("tools_init", map[string]interface{}{},
-			time.Since(toolsInitStart), true)
+		startupLogger.WithContext("duration_ms", time.Since(toolsInitStart).Milliseconds()).
+			Info("Tools init completed")
 	}
 
 	// Start cache refresh coordinator
 	go s.cacheRefreshCoordinator(ctx)
 
-	s.loggingManager.LogStartupSequence("server_ready", map[string]interface{}{
-		"total_startup_time_ms": time.Since(startTime).Milliseconds(),
-	}, time.Since(startTime), true)
+	startupLogger.WithContext("total_startup_time_ms", time.Since(startTime).Milliseconds()).
+		Info("Server ready")
 
 	s.logger.Info("MCP Architecture Service started successfully")
 
@@ -214,8 +209,9 @@ func (s *MCPServer) Start(ctx context.Context) error {
 // Shutdown gracefully shuts down the MCP server
 func (s *MCPServer) Shutdown(ctx context.Context) error {
 	shutdownStart := time.Now()
+	shutdownLogger := s.loggingManager.GetLogger("shutdown")
 
-	s.loggingManager.LogShutdownSequence("shutdown_start", map[string]interface{}{}, 0, true)
+	shutdownLogger.Info("Shutdown start")
 
 	// Signal shutdown to background goroutines
 	close(s.shutdownChan)
@@ -224,13 +220,12 @@ func (s *MCPServer) Shutdown(ctx context.Context) error {
 	monitorShutdownStart := time.Now()
 	if s.monitor != nil {
 		if err := s.monitor.StopWatching(); err != nil {
-			s.loggingManager.LogShutdownSequence("monitor_stop", map[string]interface{}{
-				"error": err.Error(),
-			}, time.Since(monitorShutdownStart), false)
+			shutdownLogger.WithContext("duration_ms", time.Since(monitorShutdownStart).Milliseconds()).
+				WithError(err).Error("Monitor stop failed")
 			s.logger.WithError(err).Error("Error stopping file monitor")
 		} else {
-			s.loggingManager.LogShutdownSequence("monitor_stop", map[string]interface{}{},
-				time.Since(monitorShutdownStart), true)
+			shutdownLogger.WithContext("duration_ms", time.Since(monitorShutdownStart).Milliseconds()).
+				Info("Monitor stopped")
 		}
 	}
 
@@ -238,12 +233,11 @@ func (s *MCPServer) Shutdown(ctx context.Context) error {
 	cacheShutdownStart := time.Now()
 	s.cache.Close() // Stop cleanup goroutines
 	s.cache.Clear()
-	s.loggingManager.LogShutdownSequence("cache_clear", map[string]interface{}{},
-		time.Since(cacheShutdownStart), true)
+	shutdownLogger.WithContext("duration_ms", time.Since(cacheShutdownStart).Milliseconds()).
+		Info("Cache cleared")
 
-	s.loggingManager.LogShutdownSequence("shutdown_complete", map[string]interface{}{
-		"total_shutdown_time_ms": time.Since(shutdownStart).Milliseconds(),
-	}, time.Since(shutdownStart), true)
+	shutdownLogger.WithContext("total_shutdown_time_ms", time.Since(shutdownStart).Milliseconds()).
+		Info("Shutdown complete")
 
 	s.logger.Info("MCP Architecture Service shutdown completed")
 
@@ -265,14 +259,17 @@ func (s *MCPServer) processMessages(ctx context.Context, reader io.Reader, write
 				if err == io.EOF {
 					return nil
 				}
-				log.Printf("Error decoding message: %v", err)
+				s.logger.WithError(err).Error("Error decoding message")
 				continue
 			}
 
 			response := s.handleMessage(&message)
 			if response != nil {
 				if err := encoder.Encode(response); err != nil {
-					log.Printf("Error encoding response: %v", err)
+					s.logger.WithError(err).
+						WithContext("method", message.Method).
+						WithContext("request_id", message.ID).
+						Error("Error encoding response")
 				}
 			}
 		}
@@ -293,7 +290,21 @@ func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage
 
 	defer func() {
 		duration := time.Since(startTime)
-		s.loggingManager.LogMCPRequest(message.Method, message.ID, duration, success, errorMsg)
+		mcpLogger := s.loggingManager.GetLogger("mcp_protocol").
+			WithContext("mcp_method", message.Method).
+			WithContext("request_id", message.ID).
+			WithContext("duration_ms", duration.Milliseconds()).
+			WithContext("success", success)
+
+		if !success && errorMsg != "" {
+			mcpLogger = mcpLogger.WithContext("error_message", errorMsg)
+		}
+
+		if success {
+			mcpLogger.Info("MCP message processed successfully")
+		} else {
+			mcpLogger.Warn("MCP message processing failed")
+		}
 	}()
 
 	switch message.Method {
@@ -338,7 +349,11 @@ func (s *MCPServer) setupCircuitBreakerCallbacks() {
 
 // onDegradationStateChange handles degradation state changes
 func (s *MCPServer) onDegradationStateChange(component errors.ServiceComponent, oldLevel, newLevel errors.DegradationLevel) {
-	s.loggingManager.LogDegradationStateChange(component, oldLevel, newLevel)
+	s.loggingManager.GetLogger("degradation").
+		WithContext("degraded_component", string(component)).
+		WithContext("old_level", oldLevel.String()).
+		WithContext("new_level", newLevel.String()).
+		Warn("Service degradation level changed")
 
 	// Take specific actions based on component and degradation level
 	switch component {

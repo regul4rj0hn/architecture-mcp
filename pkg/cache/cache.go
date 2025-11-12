@@ -1,13 +1,13 @@
 package cache
 
 import (
-	"fmt"
 	"runtime"
 	"sync"
 	"time"
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/errors"
+	"mcp-architecture-service/pkg/logging"
 )
 
 // DocumentCache provides in-memory caching for documentation with optimized memory usage
@@ -23,6 +23,7 @@ type DocumentCache struct {
 	maxMemoryUsage int64      // Maximum memory usage before cleanup (in bytes)
 	cleanupTicker  *time.Ticker
 	stopCleanup    chan struct{}
+	logger         *logging.StructuredLogger
 }
 
 // CacheStats tracks cache performance metrics
@@ -36,6 +37,10 @@ type CacheStats struct {
 
 // NewDocumentCache creates a new document cache with memory optimizations
 func NewDocumentCache() *DocumentCache {
+	// Create a default logger for the cache
+	loggingManager := logging.NewLoggingManager()
+	logger := loggingManager.GetLogger("cache")
+
 	cache := &DocumentCache{
 		documents:      make(map[string]*models.Document),
 		indexes:        make(map[string]*models.DocumentIndex),
@@ -43,6 +48,7 @@ func NewDocumentCache() *DocumentCache {
 		stats:          CacheStats{LastCleanup: time.Now()},
 		maxMemoryUsage: 256 * 1024 * 1024, // 256MB default limit
 		stopCleanup:    make(chan struct{}),
+		logger:         logger,
 	}
 
 	// Initialize memory pool for document reuse
@@ -85,7 +91,8 @@ func (dc *DocumentCache) performMemoryCleanup() {
 		// Update memory usage after GC
 		dc.updateMemoryUsage()
 
-		fmt.Printf("Cache cleanup performed - memory usage: %d bytes\n", dc.stats.MemoryUsage)
+		dc.logger.WithContext("memory_usage_bytes", dc.stats.MemoryUsage).
+			Debug("Cache cleanup performed")
 		dc.stats.LastCleanup = time.Now()
 	}
 }
@@ -144,7 +151,8 @@ func (dc *DocumentCache) performLRUCleanup() {
 	}
 
 	dc.stats.Invalidations += int64(count)
-	fmt.Printf("LRU cleanup removed %d documents\n", count)
+	dc.logger.WithContext("documents_removed", count).
+		Debug("LRU cleanup removed documents")
 }
 
 // Invalidate removes a document from the cache

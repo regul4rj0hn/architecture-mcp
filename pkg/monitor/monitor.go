@@ -1,12 +1,12 @@
 package monitor
 
 import (
-	"log"
 	"path/filepath"
 	"time"
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/errors"
+	"mcp-architecture-service/pkg/logging"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -16,6 +16,7 @@ type FileSystemMonitor struct {
 	watcher       *fsnotify.Watcher
 	debounceDelay time.Duration
 	callbacks     []func(models.FileEvent)
+	logger        *logging.StructuredLogger
 }
 
 // NewFileSystemMonitor creates a new file system monitor
@@ -26,10 +27,15 @@ func NewFileSystemMonitor() (*FileSystemMonitor, error) {
 			"Failed to create file watcher", err)
 	}
 
+	// Create a default logger for the monitor
+	loggingManager := logging.NewLoggingManager()
+	logger := loggingManager.GetLogger("file_monitor")
+
 	return &FileSystemMonitor{
 		watcher:       watcher,
 		debounceDelay: 500 * time.Millisecond, // 500ms debounce
 		callbacks:     make([]func(models.FileEvent), 0),
+		logger:        logger,
 	}, nil
 }
 
@@ -48,7 +54,7 @@ func (fsm *FileSystemMonitor) WatchDirectory(path string, callback func(models.F
 	// Start monitoring in a goroutine
 	go fsm.monitorEvents()
 
-	log.Printf("Started monitoring directory: %s", path)
+	fsm.logger.WithContext("directory", path).Info("Started monitoring directory")
 	return nil
 }
 
@@ -90,7 +96,7 @@ func (fsm *FileSystemMonitor) monitorEvents() {
 			if !ok {
 				return
 			}
-			log.Printf("File watcher error: %v", err)
+			fsm.logger.WithError(err).Error("File watcher error")
 		}
 	}
 }
@@ -122,5 +128,7 @@ func (fsm *FileSystemMonitor) processEvent(event fsnotify.Event) {
 		callback(fileEvent)
 	}
 
-	log.Printf("File system event: %s %s", eventType, event.Name)
+	fsm.logger.WithContext("event_type", eventType).
+		WithContext("file_path", event.Name).
+		Info("File system event")
 }

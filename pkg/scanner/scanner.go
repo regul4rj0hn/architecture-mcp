@@ -14,6 +14,7 @@ import (
 
 	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/errors"
+	"mcp-architecture-service/pkg/logging"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -25,13 +26,19 @@ import (
 type DocumentationScanner struct {
 	rootPath string
 	parser   goldmark.Markdown
+	logger   *logging.StructuredLogger
 }
 
 // NewDocumentationScanner creates a new documentation scanner
 func NewDocumentationScanner(rootPath string) *DocumentationScanner {
+	// Create a default logger for the scanner
+	loggingManager := logging.NewLoggingManager()
+	logger := loggingManager.GetLogger("scanner")
+
 	return &DocumentationScanner{
 		rootPath: rootPath,
 		parser:   goldmark.New(goldmark.WithParserOptions(parser.WithAutoHeadingID())),
+		logger:   logger,
 	}
 }
 
@@ -129,10 +136,9 @@ func (ds *DocumentationScanner) scanDirectoryConcurrent(path, category string) (
 
 	// Log parse errors if any occurred
 	if len(parseErrors) > 0 {
-		fmt.Printf("Warning: %d files had parsing errors:\n", len(parseErrors))
-		for _, errMsg := range parseErrors {
-			fmt.Printf("  - %s\n", errMsg)
-		}
+		ds.logger.WithContext("error_count", len(parseErrors)).
+			WithContext("errors", parseErrors).
+			Warn("Files had parsing errors")
 	}
 
 	return &models.DocumentIndex{
@@ -431,17 +437,20 @@ func (ds *DocumentationScanner) buildIndexConcurrent(directories []string) (map[
 	totalDocs := 0
 	for category, index := range indexes {
 		totalDocs += index.Count
-		fmt.Printf("Indexed %d documents in category '%s'\n", index.Count, category)
+		ds.logger.WithContext("category", category).
+			WithContext("document_count", index.Count).
+			Info("Indexed documents in category")
 	}
 
 	if len(allErrors) > 0 {
-		fmt.Printf("Warning: %d total errors occurred during indexing:\n", len(allErrors))
-		for _, errMsg := range allErrors {
-			fmt.Printf("  - %s\n", errMsg)
-		}
+		ds.logger.WithContext("error_count", len(allErrors)).
+			WithContext("errors", allErrors).
+			Warn("Total errors occurred during indexing")
 	}
 
-	fmt.Printf("Successfully built index with %d total documents across %d categories\n", totalDocs, len(indexes))
+	ds.logger.WithContext("total_documents", totalDocs).
+		WithContext("category_count", len(indexes)).
+		Info("Successfully built index")
 
 	return indexes, nil
 }

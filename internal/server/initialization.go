@@ -95,7 +95,21 @@ func (s *MCPServer) initializeDocumentationSystemConcurrent(ctx context.Context,
 		totalDocs := s.processScanResultsConcurrent(scanIndexes, &scanErrors)
 
 		// Log overall scan results
-		s.loggingManager.LogDocumentScan("initial_scan", totalDocs, scanErrors, scanDuration)
+		scanLogger := s.loggingManager.GetLogger("scanner").
+			WithContext("scan_directory", "initial_scan").
+			WithContext("documents_found", totalDocs).
+			WithContext("error_count", len(scanErrors)).
+			WithContext("duration_ms", scanDuration.Milliseconds())
+
+		if len(scanErrors) > 0 {
+			errorSample := scanErrors
+			if len(scanErrors) > 5 {
+				errorSample = scanErrors[:5]
+			}
+			scanLogger.WithContext("sample_errors", errorSample).Warn("Document scan completed with errors")
+		} else {
+			scanLogger.Info("Document scan completed successfully")
+		}
 	}
 
 	// Handle monitoring setup result

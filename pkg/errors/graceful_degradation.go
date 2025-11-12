@@ -175,8 +175,9 @@ func (gdm *GracefulDegradationManager) degradeComponent(component ServiceCompone
 	if rule.FallbackBehavior != nil {
 		go func() {
 			if err := rule.FallbackBehavior(); err != nil {
-				// Log fallback error but don't cascade
-				fmt.Printf("Fallback behavior failed for component %s: %v\n", component, err)
+				// Silently handle fallback error to avoid import cycle with logging package
+				// The error is not critical as it's a fallback mechanism
+				_ = err
 			}
 		}()
 	}

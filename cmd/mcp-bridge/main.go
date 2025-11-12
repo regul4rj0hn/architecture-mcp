@@ -7,7 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"mcp-architecture-service/pkg/logging"
 	"net"
 	"os"
 	"os/exec"
@@ -27,6 +27,7 @@ type MCPBridge struct {
 	sessions     map[string]*MCPSession
 	mu           sync.RWMutex
 	shutdownFlag atomic.Bool
+	logger       *logging.StructuredLogger
 }
 
 // MCPSession represents a client session with its own MCP server process
@@ -39,6 +40,7 @@ type MCPSession struct {
 	stderr  io.ReadCloser
 	done    chan struct{}
 	mu      sync.Mutex
+	logger  *logging.StructuredLogger
 }
 
 func main() {
@@ -46,14 +48,28 @@ func main() {
 		port       = flag.Int("port", 8080, "TCP server port")
 		host       = flag.String("host", "localhost", "TCP server host")
 		serverPath = flag.String("server", "./bin/mcp-server", "Path to MCP server binary")
+		logLevel   = flag.String("log-level", "INFO", "Logging level (DEBUG, INFO, WARN, ERROR)")
 	)
 	flag.Parse()
+
+	// Initialize logging system
+	loggingManager := logging.NewLoggingManager()
+	loggingManager.SetGlobalContext("service", "mcp-bridge")
+	loggingManager.SetGlobalContext("version", "1.0.0")
+	loggingManager.SetLogLevel(*logLevel)
+	logger := loggingManager.GetLogger("main")
+
+	logger.WithContext("port", *port).
+		WithContext("host", *host).
+		WithContext("server_path", *serverPath).
+		Info("Starting MCP Bridge")
 
 	bridge := &MCPBridge{
 		port:       *port,
 		host:       *host,
 		serverPath: *serverPath,
 		sessions:   make(map[string]*MCPSession),
+		logger:     loggingManager.GetLogger("bridge"),
 	}
 
 	// Create context for graceful shutdown
@@ -67,7 +83,7 @@ func main() {
 	// Start the bridge server
 	go func() {
 		if err := bridge.Start(ctx); err != nil {
-			log.Printf("Bridge server error: %v", err)
+			logger.WithError(err).Error("Bridge server error")
 			cancel()
 		}
 	}()
@@ -75,14 +91,14 @@ func main() {
 	// Wait for shutdown signal
 	select {
 	case <-sigChan:
-		log.Println("Received shutdown signal, gracefully shutting down...")
+		logger.Info("Received shutdown signal, gracefully shutting down")
 	case <-ctx.Done():
-		log.Println("Context cancelled, shutting down...")
+		logger.Info("Context cancelled, shutting down")
 	}
 
 	// Graceful shutdown
 	if err := bridge.Shutdown(); err != nil {
-		log.Printf("Shutdown error: %v", err)
+		logger.WithError(err).Error("Shutdown error")
 	}
 }
 
@@ -93,8 +109,12 @@ func (b *MCPBridge) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start listener: %v", err)
 	}
 
-	log.Printf("MCP Bridge server listening on %s:%d", b.host, b.port)
-	log.Printf("Using MCP server binary: %s", b.serverPath)
+	b.logger.WithContext("host", b.host).
+		WithContext("port", b.port).
+		Info("MCP Bridge server listening")
+
+	b.logger.WithContext("server_path", b.serverPath).
+		Info("Using MCP server binary")
 
 	for {
 		select {
@@ -113,7 +133,7 @@ func (b *MCPBridge) Start(ctx context.Context) error {
 				case <-ctx.Done():
 					return nil
 				default:
-					log.Printf("Accept error: %v", err)
+					b.logger.WithError(err).Warn("Accept error")
 					continue
 				}
 			}
@@ -140,18 +160,23 @@ func (b *MCPBridge) Shutdown() error {
 		session.Close()
 	}
 
-	log.Println("MCP Bridge shutdown completed")
+	b.logger.Info("MCP Bridge shutdown completed")
 	return nil
 }
 
 func (b *MCPBridge) handleConnection(conn net.Conn) {
 	sessionId := fmt.Sprintf("session_%d", time.Now().UnixNano())
-	log.Printf("New connection from %s (session: %s)", conn.RemoteAddr(), sessionId)
+
+	b.logger.WithContext("session_id", sessionId).
+		WithContext("remote_addr", conn.RemoteAddr().String()).
+		Info("New connection")
 
 	// Create new MCP session
 	session, err := b.createSession(sessionId, conn)
 	if err != nil {
-		log.Printf("Failed to create session %s: %v", sessionId, err)
+		b.logger.WithError(err).
+			WithContext("session_id", sessionId).
+			Error("Failed to create session")
 		conn.Close()
 		return
 	}
@@ -169,7 +194,7 @@ func (b *MCPBridge) handleConnection(conn net.Conn) {
 	delete(b.sessions, sessionId)
 	b.mu.Unlock()
 
-	log.Printf("Session %s ended", sessionId)
+	b.logger.WithContext("session_id", sessionId).Info("Session ended")
 }
 
 func (b *MCPBridge) createSession(id string, conn net.Conn) (*MCPSession, error) {
@@ -201,6 +226,10 @@ func (b *MCPBridge) createSession(id string, conn net.Conn) (*MCPSession, error)
 		return nil, fmt.Errorf("failed to start MCP server: %v", err)
 	}
 
+	// Create session logger with session context
+	sessionLogger := b.logger.WithContext("session_id", id).
+		WithContext("remote_addr", conn.RemoteAddr().String())
+
 	session := &MCPSession{
 		id:      id,
 		conn:    conn,
@@ -209,6 +238,7 @@ func (b *MCPBridge) createSession(id string, conn net.Conn) (*MCPSession, error)
 		stdout:  stdout,
 		stderr:  stderr,
 		done:    make(chan struct{}),
+		logger:  sessionLogger,
 	}
 
 	return session, nil
@@ -251,23 +281,31 @@ func (s *MCPSession) forwardClientToServer() {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		log.Printf("Session %s: Client -> Server: %s", s.id, line)
+		s.logger.WithContext("direction", "client_to_server").
+			WithContext("message", line).
+			Debug("Forwarding message")
 
 		// Parse and forward the JSON message
 		var message json.RawMessage
 		if err := json.Unmarshal([]byte(line), &message); err != nil {
-			log.Printf("Session %s: Invalid JSON from client: %v", s.id, err)
+			s.logger.WithError(err).
+				WithContext("direction", "client_to_server").
+				Warn("Invalid JSON from client")
 			continue
 		}
 
 		if err := encoder.Encode(message); err != nil {
-			log.Printf("Session %s: Error forwarding to server: %v", s.id, err)
+			s.logger.WithError(err).
+				WithContext("direction", "client_to_server").
+				Error("Error forwarding to server")
 			return
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Printf("Session %s: Client read error: %v", s.id, err)
+		s.logger.WithError(err).
+			WithContext("direction", "client_to_server").
+			Error("Client read error")
 	}
 }
 
@@ -276,17 +314,23 @@ func (s *MCPSession) forwardServerToClient() {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		log.Printf("Session %s: Server -> Client: %s", s.id, line)
+		s.logger.WithContext("direction", "server_to_client").
+			WithContext("message", line).
+			Debug("Forwarding message")
 
 		// Forward the response to the client
 		if _, err := fmt.Fprintf(s.conn, "%s\n", line); err != nil {
-			log.Printf("Session %s: Error forwarding to client: %v", s.id, err)
+			s.logger.WithError(err).
+				WithContext("direction", "server_to_client").
+				Error("Error forwarding to client")
 			return
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Printf("Session %s: Server read error: %v", s.id, err)
+		s.logger.WithError(err).
+			WithContext("direction", "server_to_client").
+			Error("Server read error")
 	}
 }
 
@@ -295,7 +339,9 @@ func (s *MCPSession) monitorServerErrors() {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		log.Printf("Session %s: Server stderr: %s", s.id, line)
+		s.logger.WithContext("stream", "stderr").
+			WithContext("message", line).
+			Warn("Server stderr output")
 	}
 }
 
@@ -329,7 +375,7 @@ func (s *MCPSession) Close() {
 	// Terminate process
 	if s.process != nil {
 		if err := s.process.Process.Kill(); err != nil {
-			log.Printf("Session %s: Error killing process: %v", s.id, err)
+			s.logger.WithError(err).Error("Error killing process")
 		}
 		s.process.Wait() // Clean up zombie process
 	}

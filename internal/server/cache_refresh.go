@@ -52,7 +52,16 @@ func (s *MCPServer) cacheRefreshCoordinator(ctx context.Context) {
 
 		refreshDuration := time.Since(refreshStart)
 
-		s.loggingManager.LogCacheRefresh("batch_refresh", affectedFiles, refreshDuration, true)
+		cacheLogger := s.loggingManager.GetLogger("cache").
+			WithContext("cache_operation", "batch_refresh").
+			WithContext("affected_files_count", len(affectedFiles)).
+			WithContext("duration_ms", refreshDuration.Milliseconds()).
+			WithContext("success", true)
+
+		if len(affectedFiles) > 0 && len(affectedFiles) <= 10 {
+			cacheLogger = cacheLogger.WithContext("affected_files", affectedFiles)
+		}
+		cacheLogger.Info("Cache refresh completed")
 
 		s.logger.WithContext("total_documents", s.cache.Size()).
 			WithContext("cache_hit_ratio", s.cache.GetCacheHitRatio()).
@@ -94,7 +103,11 @@ func (s *MCPServer) processFileEventForCache(event models.FileEvent) {
 
 	eventStart := time.Now()
 	defer func() {
-		s.loggingManager.LogFileSystemEvent(event.Type, event.Path, time.Since(eventStart))
+		s.loggingManager.GetLogger("file_monitor").
+			WithContext("fs_event_type", event.Type).
+			WithContext("fs_path", event.Path).
+			WithContext("processing_time_ms", time.Since(eventStart).Milliseconds()).
+			Info("File system event detected")
 	}()
 
 	switch event.Type {
