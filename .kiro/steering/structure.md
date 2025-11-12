@@ -7,19 +7,25 @@ inclusion: always
 ## Directory Structure
 
 ```
-cmd/mcp-server/     # Entry point: main.go with signal handling
+cmd/
+  ├── mcp-server/   # MCP Server: stdio-based JSON-RPC service
+  │   └── main.go   # Entry point with signal handling
+  └── mcp-bridge/   # MCP Bridge: TCP-to-stdio bridge
+      └── main.go   # TCP server spawning MCP Server processes
 internal/models/    # document.go (docs), mcp.go (protocol messages)
 internal/server/    # MCP message handling logic
   ├── server.go     # Core server struct and lifecycle
-  ├── handlers.go   # MCP protocol handlers
+  ├── handlers.go   # MCP protocol handlers (resources, prompts, tools, completions)
   └── initialization.go  # System initialization
-pkg/config/         # MCP asset constant path
+pkg/config/         # MCP asset constant paths
 pkg/cache/          # Thread-safe in-memory cache
 pkg/monitor/        # File system watcher (fsnotify)
 pkg/scanner/        # Documentation parser
 pkg/errors/         # Error handling, circuit breaker, graceful degradation
-pkg/logging/        # Structured logging
+pkg/logging/        # Structured logging with configurable levels
 pkg/validation/     # Input validation
+pkg/prompts/        # Prompt management and rendering
+pkg/tools/          # Tool definitions and execution
 mcp/                # MCP assets (resources and prompts)
   ├── resources/    # Architectural documentation
   │   ├── guidelines/
@@ -37,13 +43,16 @@ docs/               # Project documentation (separate from MCP resources)
 - Never import `internal/` from `pkg/`
 
 **Where to add new code**:
-- MCP handlers → `internal/server/handlers.go`
+- MCP protocol handlers → `internal/server/handlers.go`
 - Server lifecycle → `internal/server/server.go`
 - System initialization → `internal/server/initialization.go`
 - Protocol types → `internal/models/mcp.go`
 - Document types → `internal/models/document.go`
+- Prompt types → `internal/models/prompt.go`
+- Tool types → `internal/models/tool.go`
 - Utilities → `pkg/` subdirectories
-- Bootstrap → `cmd/mcp-server/main.go`
+- MCP Server bootstrap → `cmd/mcp-server/main.go`
+- MCP Bridge bootstrap → `cmd/mcp-bridge/main.go`
 
 ## Go Style
 

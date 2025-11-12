@@ -6,11 +6,17 @@ inclusion: always
 
 ## Service Purpose
 
-MCP server exposing architectural documentation (guidelines, patterns, ADRs) as resources and interactive prompts for guided workflows. JSON-RPC 2.0 over stdio only—no HTTP, no network.
+This project consists of two components:
+
+1. **MCP Server** (`cmd/mcp-server`): Core MCP service exposing architectural documentation (guidelines, patterns, ADRs) as resources and interactive prompts for guided workflows. Communicates via JSON-RPC 2.0 over stdio only—no HTTP, no network.
+
+2. **MCP Bridge** (`cmd/mcp-bridge`): TCP-to-stdio bridge service that allows network clients to connect to the MCP Server. Listens on `localhost:8080` and spawns an MCP Server process for each client connection.
 
 **MCP primitives**:
 - **Resources**: Architectural documentation from `mcp/resources/`
 - **Prompts**: Interactive templates from `mcp/prompts/` (code review, pattern suggestions, ADR creation)
+- **Tools**: Executable functions for architecture validation and search
+- **Completions**: Autocomplete suggestions for prompt arguments
 
 ## Resource URIs
 
@@ -23,7 +29,16 @@ Use `architecture://` scheme:
 
 ## MCP Protocol
 
-**Required methods**: `initialize`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`
+**Implemented methods**:
+- `initialize` - Server initialization and capability negotiation
+- `notifications/initialized` - Client initialization complete notification
+- `resources/list` - List available architectural documentation
+- `resources/read` - Read specific resource content
+- `prompts/list` - List available interactive prompts
+- `prompts/get` - Get rendered prompt with arguments
+- `tools/list` - List available executable tools
+- `tools/call` - Execute a tool with arguments
+- `completion/complete` - Get autocomplete suggestions for prompt arguments
 
 **JSON-RPC error codes**:
 - `-32700`: Parse error
@@ -35,8 +50,10 @@ Use `architecture://` scheme:
 **Behavior**:
 - Resources discovered by scanning `mcp/resources/` tree
 - Prompts loaded from `mcp/prompts/*.json`
+- Tools registered from `pkg/tools/` implementations
 - Return content as plain text in MCP format
-- Communication via stdin/stdout only
+- MCP Server: Communication via stdin/stdout only
+- MCP Bridge: TCP connections on localhost:8080
 
 ## Documentation Structure
 
@@ -54,6 +71,7 @@ Use `architecture://` scheme:
 - `review-code-against-patterns` - Code review (args: code, language)
 - `suggest-patterns` - Pattern suggestions (args: problem description)
 - `create-adr` - ADR creation (args: decision topic)
+- `guided-pattern-validation` - Interactive pattern validation workflow
 
 **Prompt format** (JSON in `mcp/prompts/`):
 - Template variables: `{{argumentName}}`
@@ -65,6 +83,12 @@ Use `architecture://` scheme:
 - Argument limits: 10,000 chars (code), 2,000 chars (descriptions)
 - Resource limits: max 50 resources, 1MB total per prompt
 - Return `-32602` for missing/invalid arguments
+
+**Completions**:
+- Reference type: `ref/prompt` with prompt name
+- Supports argument-specific completions (pattern_name, guideline_name, adr_id)
+- Prefix-based filtering with case-insensitive matching
+- Returns completion items with value, optional label and description
 
 ## Caching
 
@@ -87,5 +111,15 @@ Use `architecture://` scheme:
 - Never expose paths outside `mcp/resources/` directory
 - Validate all URIs before filesystem access
 - Run as non-root (UID 1001)
-- No network listeners (stdio only)
+- MCP Server: No network listeners (stdio only)
+- MCP Bridge: Network listener on localhost:8080 only
 - Read-only root filesystem in containers
+
+## Logging
+
+**Log levels**: DEBUG, INFO, WARN, ERROR
+- Use `--log-level` flag to set verbosity (default: INFO)
+- DEBUG: Full request/response logging with details
+- INFO: Standard operational messages
+- WARN: Degraded functionality warnings
+- ERROR: Error conditions and failures only
