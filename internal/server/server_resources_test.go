@@ -9,10 +9,10 @@ import (
 	"mcp-architecture-service/pkg/config"
 )
 
-func TestHandleResourcesList(t *testing.T) {
-	server := NewMCPServer()
+// setupTestCacheDocuments prepares test documents and adds them to the server cache
+func setupTestCacheDocuments(t *testing.T, server *MCPServer) {
+	t.Helper()
 
-	// Add some test documents to the cache
 	testDoc1 := &models.Document{
 		Metadata: models.DocumentMetadata{
 			Title:        "API Design Guidelines",
@@ -43,14 +43,11 @@ func TestHandleResourcesList(t *testing.T) {
 
 	server.cache.Set(testDoc1.Metadata.Path, testDoc1)
 	server.cache.Set(testDoc2.Metadata.Path, testDoc2)
+}
 
-	listMessage := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-list",
-		Method:  "resources/list",
-	}
-
-	response := server.handleResourcesList(listMessage)
+// validateResourceListBasics validates basic response structure and properties
+func validateResourceListBasics(t *testing.T, response *models.MCPMessage, expectedID string) models.MCPResourcesListResult {
+	t.Helper()
 
 	if response == nil {
 		t.Fatal("handleResourcesList() returned nil")
@@ -60,27 +57,31 @@ func TestHandleResourcesList(t *testing.T) {
 		t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
 	}
 
-	if response.ID != "test-list" {
-		t.Errorf("Expected ID 'test-list', got '%v'", response.ID)
+	if response.ID != expectedID {
+		t.Errorf("Expected ID '%s', got '%v'", expectedID, response.ID)
 	}
 
 	if response.Error != nil {
 		t.Errorf("Expected no error, got %v", response.Error)
 	}
 
-	// Verify result structure
 	result, ok := response.Result.(models.MCPResourcesListResult)
 	if !ok {
 		t.Fatal("Expected result to be MCPResourcesListResult")
 	}
 
-	// Should return the test documents
 	if len(result.Resources) != 2 {
 		t.Errorf("Expected 2 resources, got %d resources", len(result.Resources))
 	}
 
-	// Verify resource properties
-	for _, resource := range result.Resources {
+	return result
+}
+
+// validateResourceProperties validates individual resource properties
+func validateResourceProperties(t *testing.T, resources []models.MCPResource) {
+	t.Helper()
+
+	for _, resource := range resources {
 		if resource.URI == "" {
 			t.Error("Resource URI should not be empty")
 		}
@@ -97,11 +98,15 @@ func TestHandleResourcesList(t *testing.T) {
 			t.Error("Resource should have category annotation")
 		}
 	}
+}
 
-	// Verify specific URIs are generated correctly
+// validateResourceURIs validates URI patterns for different resource categories
+func validateResourceURIs(t *testing.T, resources []models.MCPResource) {
+	t.Helper()
+
 	foundGuideline := false
 	foundPattern := false
-	for _, resource := range result.Resources {
+	for _, resource := range resources {
 		if strings.Contains(resource.URI, "architecture://guidelines/") {
 			foundGuideline = true
 		}
@@ -118,10 +123,69 @@ func TestHandleResourcesList(t *testing.T) {
 	}
 }
 
+func TestHandleResourcesList(t *testing.T) {
+	server := NewMCPServer()
+	setupTestCacheDocuments(t, server)
+
+	listMessage := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-list",
+		Method:  "resources/list",
+	}
+
+	response := server.handleResourcesList(listMessage)
+
+	result := validateResourceListBasics(t, response, "test-list")
+	validateResourceProperties(t, result.Resources)
+	validateResourceURIs(t, result.Resources)
+}
+
+// validateResourceReadResponse validates a successful resource read response
+func validateResourceReadResponse(t *testing.T, response *models.MCPMessage, expectedID, expectedURI, expectedContent string) {
+	t.Helper()
+
+	if response == nil {
+		t.Fatal("handleResourcesRead() returned nil")
+	}
+
+	if response.JSONRPC != "2.0" {
+		t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
+	}
+
+	if response.ID != expectedID {
+		t.Errorf("Expected ID '%s', got '%v'", expectedID, response.ID)
+	}
+
+	if response.Error != nil {
+		t.Errorf("Expected no error, got %v", response.Error)
+	}
+
+	result, ok := response.Result.(models.MCPResourcesReadResult)
+	if !ok {
+		t.Fatal("Expected result to be MCPResourcesReadResult")
+	}
+
+	if len(result.Contents) != 1 {
+		t.Errorf("Expected 1 content item, got %d", len(result.Contents))
+	}
+
+	content := result.Contents[0]
+	if content.URI != expectedURI {
+		t.Errorf("Expected URI '%s', got '%s'", expectedURI, content.URI)
+	}
+
+	if content.MimeType != "text/markdown" {
+		t.Errorf("Expected mimeType 'text/markdown', got '%s'", content.MimeType)
+	}
+
+	if content.Text != expectedContent {
+		t.Errorf("Expected content to match document raw content")
+	}
+}
+
 func TestHandleResourcesRead(t *testing.T) {
 	server := NewMCPServer()
 
-	// Add a test document to the cache
 	testDoc := &models.Document{
 		Metadata: models.DocumentMetadata{
 			Title:        "API Design Guidelines",
@@ -138,7 +202,6 @@ func TestHandleResourcesRead(t *testing.T) {
 
 	server.cache.Set(testDoc.Metadata.Path, testDoc)
 
-	// Test successful resource read
 	readMessage := &models.MCPMessage{
 		JSONRPC: "2.0",
 		ID:      "test-read",
@@ -149,117 +212,57 @@ func TestHandleResourcesRead(t *testing.T) {
 	}
 
 	response := server.handleResourcesRead(readMessage)
-
-	if response == nil {
-		t.Fatal("handleResourcesRead() returned nil")
-	}
-
-	if response.JSONRPC != "2.0" {
-		t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
-	}
-
-	if response.ID != "test-read" {
-		t.Errorf("Expected ID 'test-read', got '%v'", response.ID)
-	}
-
-	if response.Error != nil {
-		t.Errorf("Expected no error, got %v", response.Error)
-	}
-
-	// Verify result structure
-	result, ok := response.Result.(models.MCPResourcesReadResult)
-	if !ok {
-		t.Fatal("Expected result to be MCPResourcesReadResult")
-	}
-
-	if len(result.Contents) != 1 {
-		t.Errorf("Expected 1 content item, got %d", len(result.Contents))
-	}
-
-	content := result.Contents[0]
-	if content.URI != "architecture://guidelines/api-design" {
-		t.Errorf("Expected URI 'architecture://guidelines/api-design', got '%s'", content.URI)
-	}
-
-	if content.MimeType != "text/markdown" {
-		t.Errorf("Expected mimeType 'text/markdown', got '%s'", content.MimeType)
-	}
-
-	if content.Text != testDoc.Content.RawContent {
-		t.Errorf("Expected content to match document raw content")
-	}
+	validateResourceReadResponse(t, response, "test-read", "architecture://guidelines/api-design", testDoc.Content.RawContent)
 }
 
 func TestHandleResourcesReadErrors(t *testing.T) {
-	server := NewMCPServer()
-
-	// Test missing URI parameter
-	readMessage := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-read-no-uri",
-		Method:  "resources/read",
-		Params:  models.MCPResourcesReadParams{},
-	}
-
-	response := server.handleResourcesRead(readMessage)
-	if response.Error == nil {
-		t.Error("Expected error for missing URI parameter")
-	}
-	if response.Error.Code != -32602 {
-		t.Errorf("Expected error code -32602, got %d", response.Error.Code)
-	}
-
-	// Test invalid URI scheme
-	readMessage2 := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-read-invalid-scheme",
-		Method:  "resources/read",
-		Params: models.MCPResourcesReadParams{
-			URI: "invalid://guidelines/test",
+	tests := []struct {
+		name         string
+		uri          string
+		expectedCode int
+	}{
+		{
+			name:         "missing URI parameter",
+			uri:          "",
+			expectedCode: -32602,
+		},
+		{
+			name:         "invalid URI scheme",
+			uri:          "invalid://guidelines/test",
+			expectedCode: -32602,
+		},
+		{
+			name:         "unsupported category",
+			uri:          "architecture://invalid/test",
+			expectedCode: -32602,
+		},
+		{
+			name:         "resource not found",
+			uri:          "architecture://guidelines/nonexistent",
+			expectedCode: -32603,
 		},
 	}
 
-	response2 := server.handleResourcesRead(readMessage2)
-	if response2.Error == nil {
-		t.Error("Expected error for invalid URI scheme")
-	}
-	if response2.Error.Code != -32602 {
-		t.Errorf("Expected error code -32602, got %d", response2.Error.Code)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := NewMCPServer()
 
-	// Test unsupported category
-	readMessage3 := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-read-invalid-category",
-		Method:  "resources/read",
-		Params: models.MCPResourcesReadParams{
-			URI: "architecture://invalid/test",
-		},
-	}
+			readMessage := &models.MCPMessage{
+				JSONRPC: "2.0",
+				ID:      "test-read-error",
+				Method:  "resources/read",
+				Params: models.MCPResourcesReadParams{
+					URI: tt.uri,
+				},
+			}
 
-	response3 := server.handleResourcesRead(readMessage3)
-	if response3.Error == nil {
-		t.Error("Expected error for unsupported category")
-	}
-	if response3.Error.Code != -32602 {
-		t.Errorf("Expected error code -32602, got %d", response3.Error.Code)
-	}
-
-	// Test resource not found
-	readMessage4 := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-read-not-found",
-		Method:  "resources/read",
-		Params: models.MCPResourcesReadParams{
-			URI: "architecture://guidelines/nonexistent",
-		},
-	}
-
-	response4 := server.handleResourcesRead(readMessage4)
-	if response4.Error == nil {
-		t.Error("Expected error for resource not found")
-	}
-	if response4.Error.Code != -32603 {
-		t.Errorf("Expected error code -32603, got %d", response4.Error.Code)
+			response := server.handleResourcesRead(readMessage)
+			if response.Error == nil {
+				t.Errorf("Expected error for %s", tt.name)
+			}
+			if response.Error != nil && response.Error.Code != tt.expectedCode {
+				t.Errorf("Expected error code %d, got %d", tt.expectedCode, response.Error.Code)
+			}
+		})
 	}
 }

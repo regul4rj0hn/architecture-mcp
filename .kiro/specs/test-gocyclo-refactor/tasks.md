@@ -37,16 +37,16 @@
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 4. Refactor internal/server/server_resources_test.go
-  - [ ] 4.1 Extract document setup helper
+- [x] 4. Refactor internal/server/server_resources_test.go
+  - [x] 4.1 Extract document setup helper
     - Create setupTestCacheDocuments function to prepare test documents
     - _Requirements: 2.1, 2.4_
-  - [ ] 4.2 Create validation helpers for TestHandleResourcesList
+  - [x] 4.2 Create validation helpers for TestHandleResourcesList
     - Create validateResourceListBasics for basic response validation
     - Create validateResourceProperties for resource property validation
     - Create validateResourceURIs for URI pattern validation
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.3_
-  - [ ] 4.3 Verify tests pass and complexity is below 15
+  - [x] 4.3 Verify tests pass and complexity is below 15
     - Run go test for the file
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
