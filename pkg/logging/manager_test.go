@@ -23,15 +23,27 @@ func TestLoggingManager(t *testing.T) {
 	})
 
 	t.Run("SetLogLevel", func(t *testing.T) {
-		manager := NewLoggingManager()
-		manager.SetLogLevel("DEBUG")
-		if manager.logLevel != LogLevelDEBUG {
-			t.Error("Expected log level to be DEBUG")
+		tests := []struct {
+			name     string
+			input    string
+			expected LogLevel
+		}{
+			{"valid DEBUG", "DEBUG", LogLevelDEBUG},
+			{"valid INFO", "INFO", LogLevelINFO},
+			{"valid WARN", "WARN", LogLevelWARN},
+			{"valid ERROR", "ERROR", LogLevelERROR},
+			{"invalid defaults to INFO", "invalid", LogLevelINFO},
+			{"empty defaults to INFO", "", LogLevelINFO},
 		}
 
-		manager.SetLogLevel("invalid")
-		if manager.logLevel != LogLevelINFO {
-			t.Error("Expected invalid log level to default to INFO")
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				manager := NewLoggingManager()
+				manager.SetLogLevel(tt.input)
+				if manager.logLevel != tt.expected {
+					t.Errorf("SetLogLevel(%q) = %v, want %v", tt.input, manager.logLevel, tt.expected)
+				}
+			})
 		}
 	})
 
@@ -46,20 +58,33 @@ func TestLoggingManager(t *testing.T) {
 	})
 
 	t.Run("shouldLog respects log level", func(t *testing.T) {
-		manager := NewLoggingManager()
-		manager.SetLogLevel("WARN")
+		tests := []struct {
+			name           string
+			managerLevel   string
+			testLevel      LogLevel
+			shouldBeLogged bool
+		}{
+			{"DEBUG filtered when WARN", "WARN", LogLevelDEBUG, false},
+			{"INFO filtered when WARN", "WARN", LogLevelINFO, false},
+			{"WARN passes when WARN", "WARN", LogLevelWARN, true},
+			{"ERROR passes when WARN", "WARN", LogLevelERROR, true},
+			{"INFO filtered when ERROR", "ERROR", LogLevelINFO, false},
+			{"WARN filtered when ERROR", "ERROR", LogLevelWARN, false},
+			{"ERROR passes when ERROR", "ERROR", LogLevelERROR, true},
+			{"DEBUG passes when DEBUG", "DEBUG", LogLevelDEBUG, true},
+			{"INFO passes when DEBUG", "DEBUG", LogLevelINFO, true},
+		}
 
-		if manager.shouldLog(LogLevelDEBUG) {
-			t.Error("Expected DEBUG to be filtered when level is WARN")
-		}
-		if manager.shouldLog(LogLevelINFO) {
-			t.Error("Expected INFO to be filtered when level is WARN")
-		}
-		if !manager.shouldLog(LogLevelWARN) {
-			t.Error("Expected WARN to pass when level is WARN")
-		}
-		if !manager.shouldLog(LogLevelERROR) {
-			t.Error("Expected ERROR to pass when level is WARN")
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				manager := NewLoggingManager()
+				manager.SetLogLevel(tt.managerLevel)
+				result := manager.shouldLog(tt.testLevel)
+				if result != tt.shouldBeLogged {
+					t.Errorf("shouldLog(%v) with level %s = %v, want %v",
+						tt.testLevel, tt.managerLevel, result, tt.shouldBeLogged)
+				}
+			})
 		}
 	})
 }
