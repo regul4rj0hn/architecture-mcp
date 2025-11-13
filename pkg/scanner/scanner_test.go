@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"mcp-architecture-service/internal/models"
 	"mcp-architecture-service/pkg/config"
 	"os"
 	"path/filepath"
@@ -145,63 +146,62 @@ func TestIsValidMarkdown(t *testing.T) {
 func TestScanDirectoryErrors(t *testing.T) {
 	scanner := NewDocumentationScanner("/test")
 
-	// Test empty path
-	_, err := scanner.ScanDirectory("")
-	if err == nil {
-		t.Error("Expected error for empty path, got nil")
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"empty path", ""},
+		{"non-existent directory", "/non/existent/path"},
 	}
 
-	// Test non-existent directory
-	_, err = scanner.ScanDirectory("/non/existent/path")
-	if err == nil {
-		t.Error("Expected error for non-existent directory, got nil")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := scanner.ScanDirectory(tt.path)
+			if err == nil {
+				t.Errorf("Expected error for %s, got nil", tt.name)
+			}
+		})
 	}
 }
 
 func TestParseMarkdownFileErrors(t *testing.T) {
 	scanner := NewDocumentationScanner("/test")
 
-	// Test empty path
-	_, err := scanner.ParseMarkdownFile("")
-	if err == nil {
-		t.Error("Expected error for empty file path, got nil")
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"empty path", ""},
+		{"non-existent file", "/non/existent/file.md"},
 	}
 
-	// Test non-existent file
-	_, err = scanner.ParseMarkdownFile("/non/existent/file.md")
-	if err == nil {
-		t.Error("Expected error for non-existent file, got nil")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := scanner.ParseMarkdownFile(tt.path)
+			if err == nil {
+				t.Errorf("Expected error for %s, got nil", tt.name)
+			}
+		})
 	}
 }
 
-// Integration test with temporary files
-func TestScanDirectoryIntegration(t *testing.T) {
-	// Create temporary directory structure
-	tempDir, err := os.MkdirTemp("", "scanner_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+// setupScanTestDirectories creates a temporary directory structure with test files
+func setupScanTestDirectories(t *testing.T) (tempDir, guidelinesDir, patternsDir, adrDir string) {
+	t.Helper()
 
-	// Create test directories
-	guidelinesDir := filepath.Join(tempDir, config.GuidelinesPath)
-	patternsDir := filepath.Join(tempDir, config.PatternsPath)
-	adrDir := filepath.Join(tempDir, config.ADRPath)
+	tempDir = t.TempDir()
 
-	err = os.MkdirAll(guidelinesDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create guidelines dir: %v", err)
-	}
-	err = os.MkdirAll(patternsDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create patterns dir: %v", err)
-	}
-	err = os.MkdirAll(adrDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create adr dir: %v", err)
+	guidelinesDir = filepath.Join(tempDir, config.GuidelinesPath)
+	patternsDir = filepath.Join(tempDir, config.PatternsPath)
+	adrDir = filepath.Join(tempDir, config.ADRPath)
+
+	dirs := []string{guidelinesDir, patternsDir, adrDir}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", dir, err)
+		}
 	}
 
-	// Create test files
 	testFiles := map[string]string{
 		filepath.Join(guidelinesDir, "api.md"):     "# API Guidelines\n\nThis is a guideline.",
 		filepath.Join(patternsDir, "singleton.md"): "# Singleton Pattern\n\nThis is a pattern.",
@@ -209,50 +209,47 @@ func TestScanDirectoryIntegration(t *testing.T) {
 	}
 
 	for filePath, content := range testFiles {
-		err = os.WriteFile(filePath, []byte(content), 0644)
-		if err != nil {
+		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 			t.Fatalf("Failed to create test file %s: %v", filePath, err)
 		}
 	}
 
-	scanner := NewDocumentationScanner(tempDir)
+	return tempDir, guidelinesDir, patternsDir, adrDir
+}
 
-	// Test scanning guidelines directory
-	index, err := scanner.ScanDirectory(guidelinesDir)
-	if err != nil {
-		t.Fatalf("Failed to scan guidelines directory: %v", err)
-	}
+// validateScannedDocuments validates the scanned documents in an index
+func validateScannedDocuments(t *testing.T, index *models.DocumentIndex, expectedCategory string, expectedCount int, expectedTitle string) {
+	t.Helper()
 
-	if index.Category != "guideline" {
-		t.Errorf("Expected category 'guideline', got '%s'", index.Category)
+	if index.Category != expectedCategory {
+		t.Errorf("Expected category '%s', got '%s'", expectedCategory, index.Category)
 	}
-	if index.Count != 1 {
-		t.Errorf("Expected 1 document, got %d", index.Count)
+	if index.Count != expectedCount {
+		t.Errorf("Expected %d document(s), got %d", expectedCount, index.Count)
 	}
-	if len(index.Documents) != 1 {
-		t.Errorf("Expected 1 document in slice, got %d", len(index.Documents))
-	}
-
-	doc := index.Documents[0]
-	if doc.Title != "API Guidelines" {
-		t.Errorf("Expected title 'API Guidelines', got '%s'", doc.Title)
-	}
-	if doc.Category != "guideline" {
-		t.Errorf("Expected category 'guideline', got '%s'", doc.Category)
+	if len(index.Documents) != expectedCount {
+		t.Errorf("Expected %d document(s) in slice, got %d", expectedCount, len(index.Documents))
 	}
 
-	// Test BuildIndex with multiple directories
-	directories := []string{guidelinesDir, patternsDir, adrDir}
-	indexes, err := scanner.BuildIndex(directories)
-	if err != nil {
-		t.Fatalf("Failed to build index: %v", err)
+	if expectedCount > 0 && expectedTitle != "" {
+		doc := index.Documents[0]
+		if doc.Title != expectedTitle {
+			t.Errorf("Expected title '%s', got '%s'", expectedTitle, doc.Title)
+		}
+		if doc.Category != expectedCategory {
+			t.Errorf("Expected category '%s', got '%s'", expectedCategory, doc.Category)
+		}
+	}
+}
+
+// validateBuildIndex validates the results of BuildIndex
+func validateBuildIndex(t *testing.T, indexes map[string]*models.DocumentIndex, expectedCategories []string) {
+	t.Helper()
+
+	if len(indexes) != len(expectedCategories) {
+		t.Errorf("Expected %d categories, got %d", len(expectedCategories), len(indexes))
 	}
 
-	if len(indexes) != 3 {
-		t.Errorf("Expected 3 categories, got %d", len(indexes))
-	}
-
-	expectedCategories := []string{"guideline", "pattern", "adr"}
 	for _, category := range expectedCategories {
 		if _, exists := indexes[category]; !exists {
 			t.Errorf("Expected category '%s' to exist in indexes", category)
@@ -260,89 +257,141 @@ func TestScanDirectoryIntegration(t *testing.T) {
 	}
 }
 
+func TestScanDirectoryIntegration(t *testing.T) {
+	tempDir, guidelinesDir, patternsDir, adrDir := setupScanTestDirectories(t)
+
+	scanner := NewDocumentationScanner(tempDir)
+
+	t.Run("scan single directory", func(t *testing.T) {
+		index, err := scanner.ScanDirectory(guidelinesDir)
+		if err != nil {
+			t.Fatalf("Failed to scan guidelines directory: %v", err)
+		}
+		validateScannedDocuments(t, index, "guideline", 1, "API Guidelines")
+	})
+
+	t.Run("build index from multiple directories", func(t *testing.T) {
+		directories := []string{guidelinesDir, patternsDir, adrDir}
+		indexes, err := scanner.BuildIndex(directories)
+		if err != nil {
+			t.Fatalf("Failed to build index: %v", err)
+		}
+
+		expectedCategories := []string{"guideline", "pattern", "adr"}
+		validateBuildIndex(t, indexes, expectedCategories)
+	})
+}
+
 func TestParseMarkdownFileIntegration(t *testing.T) {
-	// Create temporary file
-	tempDir, err := os.MkdirTemp("", "scanner_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
-	testFile := filepath.Join(tempDir, "test.md")
-	content := "# Test Document\n\nThis is test content with **bold** text."
-
-	err = os.WriteFile(testFile, []byte(content), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+	tests := []struct {
+		name          string
+		filename      string
+		content       string
+		expectedTitle string
+	}{
+		{
+			name:          "valid markdown with formatting",
+			filename:      "test.md",
+			content:       "# Test Document\n\nThis is test content with **bold** text.",
+			expectedTitle: "Test Document",
+		},
+		{
+			name:          "simple markdown",
+			filename:      "simple.md",
+			content:       "# Simple Title\n\nPlain content.",
+			expectedTitle: "Simple Title",
+		},
 	}
 
 	scanner := NewDocumentationScanner(tempDir)
-	metadata, err := scanner.ParseMarkdownFile(testFile)
-	if err != nil {
-		t.Fatalf("Failed to parse markdown file: %v", err)
-	}
 
-	if metadata.Title != "Test Document" {
-		t.Errorf("Expected title 'Test Document', got '%s'", metadata.Title)
-	}
-	if metadata.Size != int64(len(content)) {
-		t.Errorf("Expected size %d, got %d", len(content), metadata.Size)
-	}
-	if metadata.Checksum == "" {
-		t.Error("Expected checksum to be calculated")
-	}
-	if metadata.Path == "" {
-		t.Error("Expected path to be set")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testFile := filepath.Join(tempDir, tt.filename)
+			if err := os.WriteFile(testFile, []byte(tt.content), 0644); err != nil {
+				t.Fatalf("Failed to create test file: %v", err)
+			}
+
+			metadata, err := scanner.ParseMarkdownFile(testFile)
+			if err != nil {
+				t.Fatalf("Failed to parse markdown file: %v", err)
+			}
+
+			if metadata.Title != tt.expectedTitle {
+				t.Errorf("Expected title '%s', got '%s'", tt.expectedTitle, metadata.Title)
+			}
+			if metadata.Size != int64(len(tt.content)) {
+				t.Errorf("Expected size %d, got %d", len(tt.content), metadata.Size)
+			}
+			if metadata.Checksum == "" {
+				t.Error("Expected checksum to be calculated")
+			}
+			if metadata.Path == "" {
+				t.Error("Expected path to be set")
+			}
+		})
 	}
 }
 
 func TestBuildIndexErrors(t *testing.T) {
 	scanner := NewDocumentationScanner("/test")
 
-	// Test with empty directories list
-	_, err := scanner.BuildIndex([]string{})
-	if err == nil {
-		t.Error("Expected error for empty directories list, got nil")
+	tests := []struct {
+		name        string
+		directories []string
+		expectError bool
+		expectEmpty bool
+	}{
+		{
+			name:        "empty directories list",
+			directories: []string{},
+			expectError: true,
+			expectEmpty: false,
+		},
+		{
+			name:        "non-existent directories",
+			directories: []string{"/non/existent/path"},
+			expectError: false,
+			expectEmpty: true,
+		},
 	}
 
-	// Test with non-existent directories
-	indexes, err := scanner.BuildIndex([]string{"/non/existent/path"})
-	if err != nil {
-		t.Errorf("BuildIndex should not fail completely, got error: %v", err)
-	}
-	if len(indexes) != 0 {
-		t.Errorf("Expected empty indexes for non-existent directories, got %d", len(indexes))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			indexes, err := scanner.BuildIndex(tt.directories)
+
+			if tt.expectError && err == nil {
+				t.Error("Expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Expected no error, got: %v", err)
+			}
+			if tt.expectEmpty && len(indexes) != 0 {
+				t.Errorf("Expected empty indexes, got %d", len(indexes))
+			}
+		})
 	}
 }
 
 func TestScanDirectoryWithMalformedFiles(t *testing.T) {
-	// Create temporary directory with malformed files
-	tempDir, err := os.MkdirTemp("", "scanner_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
-	// Create a binary file with .md extension (should be rejected)
-	binaryFile := filepath.Join(tempDir, "binary.md")
-	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0xFF}
-	err = os.WriteFile(binaryFile, binaryContent, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create binary file: %v", err)
+	testFiles := []struct {
+		filename string
+		content  []byte
+	}{
+		{"binary.md", []byte{0x00, 0x01, 0x02, 0x03, 0xFF}},
+		{"empty.md", []byte{}},
+		{"valid.md", []byte("# Valid Document\n\nContent here.")},
 	}
 
-	// Create an empty file
-	emptyFile := filepath.Join(tempDir, "empty.md")
-	err = os.WriteFile(emptyFile, []byte{}, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create empty file: %v", err)
-	}
-
-	// Create a valid file
-	validFile := filepath.Join(tempDir, "valid.md")
-	err = os.WriteFile(validFile, []byte("# Valid Document\n\nContent here."), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create valid file: %v", err)
+	for _, tf := range testFiles {
+		filePath := filepath.Join(tempDir, tf.filename)
+		if err := os.WriteFile(filePath, tf.content, 0644); err != nil {
+			t.Fatalf("Failed to create test file %s: %v", tf.filename, err)
+		}
 	}
 
 	scanner := NewDocumentationScanner(tempDir)
@@ -351,7 +400,6 @@ func TestScanDirectoryWithMalformedFiles(t *testing.T) {
 		t.Fatalf("ScanDirectory failed: %v", err)
 	}
 
-	// Should have 1 valid document and some errors
 	if index.Count != 1 {
 		t.Errorf("Expected 1 valid document, got %d", index.Count)
 	}

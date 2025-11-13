@@ -65,15 +65,15 @@
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 6. Refactor pkg/scanner/scanner_test.go
-  - [ ] 6.1 Extract directory setup helper
+- [x] 6. Refactor pkg/scanner/scanner_test.go
+  - [x] 6.1 Extract directory setup helper
     - Create setupScanTestDirectories function to prepare test directory structure
     - _Requirements: 2.1, 2.4_
-  - [ ] 6.2 Create validation helper for TestScanDirectoryIntegration
+  - [x] 6.2 Create validation helper for TestScanDirectoryIntegration
     - Create validateScannedDocuments function for document validation
     - Split verification logic into focused helpers
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.7_
-  - [ ] 6.3 Verify tests pass and complexity is below 15
+  - [x] 6.3 Verify tests pass and complexity is below 15
     - Run go test for the file
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
