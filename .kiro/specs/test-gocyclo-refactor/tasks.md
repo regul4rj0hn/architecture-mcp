@@ -51,16 +51,16 @@
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 5. Refactor internal/server/server_prompts_test.go
-  - [ ] 5.1 Extract prompt setup helper
+- [x] 5. Refactor internal/server/server_prompts_test.go
+  - [x] 5.1 Extract prompt setup helper
     - Create setupTestPrompt function to prepare test prompt files
     - _Requirements: 2.1, 2.4_
-  - [ ] 5.2 Create validation helpers for TestHandlePromptsGet
+  - [x] 5.2 Create validation helpers for TestHandlePromptsGet
     - Create validatePromptsGetResponse for response structure validation
     - Create validateMessageStructure for message validation
     - Create validateArgumentSubstitution for template substitution validation
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.4_
-  - [ ] 5.3 Verify tests pass and complexity is below 15
+  - [x] 5.3 Verify tests pass and complexity is below 15
     - Run go test for the file
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_

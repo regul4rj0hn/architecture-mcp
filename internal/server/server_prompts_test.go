@@ -16,11 +16,96 @@ import (
 	"mcp-architecture-service/pkg/prompts"
 )
 
+// setupTestPromptFromJSON creates a test prompt file from JSON content and initializes the prompt manager
+func setupTestPromptFromJSON(t *testing.T, server *MCPServer, promptName, promptContent string) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, promptName+".json"), []byte(promptContent), 0644); err != nil {
+		t.Fatalf("Failed to create test prompt file: %v", err)
+	}
+
+	logger := logging.NewStructuredLogger("test")
+	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
+
+	if err := server.promptManager.LoadPrompts(); err != nil {
+		t.Fatalf("Failed to load prompts: %v", err)
+	}
+
+	return tmpDir
+}
+
+// validatePromptsGetResponse validates the basic structure of a prompts/get response
+func validatePromptsGetResponse(t *testing.T, response *models.MCPMessage, expectedID string) models.MCPPromptsGetResult {
+	t.Helper()
+
+	if response == nil {
+		t.Fatal("handlePromptsGet() returned nil")
+	}
+
+	if response.JSONRPC != "2.0" {
+		t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
+	}
+
+	if response.ID != expectedID {
+		t.Errorf("Expected ID '%s', got '%v'", expectedID, response.ID)
+	}
+
+	if response.Error != nil {
+		t.Errorf("Expected no error, got %v", response.Error)
+	}
+
+	// Verify result structure - try both pointer and value types
+	var result models.MCPPromptsGetResult
+	if resultPtr, ok := response.Result.(*models.MCPPromptsGetResult); ok {
+		result = *resultPtr
+	} else if resultVal, ok := response.Result.(models.MCPPromptsGetResult); ok {
+		result = resultVal
+	} else {
+		t.Fatalf("Expected result to be MCPPromptsGetResult, got %T", response.Result)
+	}
+
+	if len(result.Messages) == 0 {
+		t.Error("Expected at least one message in result")
+	}
+
+	return result
+}
+
+// validateMessageStructure validates the structure of prompt messages
+func validateMessageStructure(t *testing.T, messages []models.MCPPromptMessage) {
+	t.Helper()
+
+	for _, msg := range messages {
+		if msg.Role == "" {
+			t.Error("Message role should not be empty")
+		}
+		if msg.Content.Type == "" {
+			t.Error("Message content type should not be empty")
+		}
+		if msg.Content.Text == "" {
+			t.Error("Message content text should not be empty")
+		}
+	}
+}
+
+// validateArgumentSubstitution validates that template variables were substituted correctly
+func validateArgumentSubstitution(t *testing.T, messages []models.MCPPromptMessage, templateVar, expectedValue string) {
+	t.Helper()
+
+	for _, msg := range messages {
+		if strings.Contains(msg.Content.Text, "{{"+templateVar+"}}") {
+			t.Errorf("Template variable {{%s}} was not substituted", templateVar)
+		}
+		if !strings.Contains(msg.Content.Text, expectedValue) {
+			t.Errorf("Expected rendered text to contain '%s'", expectedValue)
+		}
+	}
+}
+
 func TestHandlePromptsList(t *testing.T) {
 	server := NewMCPServer()
 
-	// Create temporary prompts directory for testing
-	tmpDir := t.TempDir()
 	testPromptContent := `{
 		"name": "test-list-prompt",
 		"description": "A test prompt for list testing",
@@ -42,18 +127,7 @@ func TestHandlePromptsList(t *testing.T) {
 		]
 	}`
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "test-list-prompt.json"), []byte(testPromptContent), 0644); err != nil {
-		t.Fatalf("Failed to create test prompt file: %v", err)
-	}
-
-	// Update prompt manager to use test directory
-	logger := logging.NewStructuredLogger("test")
-	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
-
-	// Load prompts from the test directory
-	if err := server.promptManager.LoadPrompts(); err != nil {
-		t.Fatalf("Failed to load prompts: %v", err)
-	}
+	setupTestPromptFromJSON(t, server, "test-list-prompt", testPromptContent)
 
 	listMessage := &models.MCPMessage{
 		JSONRPC: "2.0",
@@ -114,8 +188,6 @@ func TestHandlePromptsList(t *testing.T) {
 func TestHandlePromptsGet(t *testing.T) {
 	server := NewMCPServer()
 
-	// Create temporary prompts directory for testing
-	tmpDir := t.TempDir()
 	testPromptContent := `{
 		"name": "test-get-prompt",
 		"description": "A test prompt for get testing",
@@ -138,18 +210,7 @@ func TestHandlePromptsGet(t *testing.T) {
 		]
 	}`
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "test-get-prompt.json"), []byte(testPromptContent), 0644); err != nil {
-		t.Fatalf("Failed to create test prompt file: %v", err)
-	}
-
-	// Update prompt manager to use test directory
-	logger := logging.NewStructuredLogger("test")
-	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
-
-	// Load prompts from the test directory
-	if err := server.promptManager.LoadPrompts(); err != nil {
-		t.Fatalf("Failed to load prompts: %v", err)
-	}
+	setupTestPromptFromJSON(t, server, "test-get-prompt", testPromptContent)
 
 	// Test successful prompt retrieval with valid arguments
 	getMessage := &models.MCPMessage{
@@ -165,63 +226,14 @@ func TestHandlePromptsGet(t *testing.T) {
 	}
 
 	response := server.handlePromptsGet(getMessage)
-
-	if response == nil {
-		t.Fatal("handlePromptsGet() returned nil")
-	}
-
-	if response.JSONRPC != "2.0" {
-		t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
-	}
-
-	if response.ID != "test-prompts-get" {
-		t.Errorf("Expected ID 'test-prompts-get', got '%v'", response.ID)
-	}
-
-	if response.Error != nil {
-		t.Errorf("Expected no error, got %v", response.Error)
-	}
-
-	// Verify result structure - try both pointer and value types
-	var result models.MCPPromptsGetResult
-	if resultPtr, ok := response.Result.(*models.MCPPromptsGetResult); ok {
-		result = *resultPtr
-	} else if resultVal, ok := response.Result.(models.MCPPromptsGetResult); ok {
-		result = resultVal
-	} else {
-		t.Fatalf("Expected result to be MCPPromptsGetResult, got %T", response.Result)
-	}
-
-	if len(result.Messages) == 0 {
-		t.Error("Expected at least one message in result")
-	}
-
-	// Verify message structure
-	for _, msg := range result.Messages {
-		if msg.Role == "" {
-			t.Error("Message role should not be empty")
-		}
-		if msg.Content.Type == "" {
-			t.Error("Message content type should not be empty")
-		}
-		if msg.Content.Text == "" {
-			t.Error("Message content text should not be empty")
-		}
-		// Verify argument substitution occurred
-		if strings.Contains(msg.Content.Text, "{{input}}") {
-			t.Error("Template variable {{input}} was not substituted")
-		}
-		if !strings.Contains(msg.Content.Text, "test value") {
-			t.Error("Expected rendered text to contain 'test value'")
-		}
-	}
+	result := validatePromptsGetResponse(t, response, "test-prompts-get")
+	validateMessageStructure(t, result.Messages)
+	validateArgumentSubstitution(t, result.Messages, "input", "test value")
 }
 
 func TestHandlePromptsGetErrors(t *testing.T) {
 	server := NewMCPServer()
 
-	// Create temporary prompts directory for testing
-	tmpDir := t.TempDir()
 	testPromptContent := `{
 		"name": "test-error-prompt",
 		"description": "A test prompt for error testing",
@@ -244,103 +256,80 @@ func TestHandlePromptsGetErrors(t *testing.T) {
 		]
 	}`
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "test-error-prompt.json"), []byte(testPromptContent), 0644); err != nil {
-		t.Fatalf("Failed to create test prompt file: %v", err)
-	}
+	setupTestPromptFromJSON(t, server, "test-error-prompt", testPromptContent)
 
-	// Update prompt manager to use test directory
-	logger := logging.NewStructuredLogger("test")
-	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
-
-	// Load prompts
-	if err := server.promptManager.LoadPrompts(); err != nil {
-		t.Fatalf("Failed to load prompts: %v", err)
-	}
-
-	// Test missing prompt name parameter
-	getMessage1 := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-get-no-name",
-		Method:  "prompts/get",
-		Params:  models.MCPPromptsGetParams{},
-	}
-
-	response1 := server.handlePromptsGet(getMessage1)
-	if response1.Error == nil {
-		t.Error("Expected error for missing prompt name parameter")
-	}
-	if response1.Error.Code != -32602 {
-		t.Errorf("Expected error code -32602, got %d", response1.Error.Code)
-	}
-
-	// Test prompt not found
-	getMessage2 := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-get-not-found",
-		Method:  "prompts/get",
-		Params: models.MCPPromptsGetParams{
-			Name: "nonexistent-prompt",
+	tests := []struct {
+		name              string
+		params            models.MCPPromptsGetParams
+		expectedErrorCode int
+		errorMsgContains  string
+	}{
+		{
+			name:              "missing prompt name",
+			params:            models.MCPPromptsGetParams{},
+			expectedErrorCode: -32602,
+			errorMsgContains:  "",
 		},
-	}
-
-	response2 := server.handlePromptsGet(getMessage2)
-	if response2.Error == nil {
-		t.Error("Expected error for prompt not found")
-	}
-	if response2.Error.Code != -32602 {
-		t.Errorf("Expected error code -32602, got %d", response2.Error.Code)
-	}
-	if !strings.Contains(response2.Error.Message, "not found") {
-		t.Errorf("Expected error message to contain 'not found', got '%s'", response2.Error.Message)
-	}
-
-	// Test missing required argument
-	getMessage3 := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-get-missing-arg",
-		Method:  "prompts/get",
-		Params: models.MCPPromptsGetParams{
-			Name:      "test-error-prompt",
-			Arguments: map[string]interface{}{},
-		},
-	}
-
-	response3 := server.handlePromptsGet(getMessage3)
-	if response3.Error == nil {
-		t.Error("Expected error for missing required argument")
-	}
-	if response3.Error.Code != -32602 {
-		t.Errorf("Expected error code -32602, got %d", response3.Error.Code)
-	}
-
-	// Test argument too long
-	longInput := strings.Repeat("a", 200) // Exceeds maxLength of 100
-	getMessage4 := &models.MCPMessage{
-		JSONRPC: "2.0",
-		ID:      "test-get-arg-too-long",
-		Method:  "prompts/get",
-		Params: models.MCPPromptsGetParams{
-			Name: "test-error-prompt",
-			Arguments: map[string]interface{}{
-				"input": longInput,
+		{
+			name: "prompt not found",
+			params: models.MCPPromptsGetParams{
+				Name: "nonexistent-prompt",
 			},
+			expectedErrorCode: -32602,
+			errorMsgContains:  "not found",
+		},
+		{
+			name: "missing required argument",
+			params: models.MCPPromptsGetParams{
+				Name:      "test-error-prompt",
+				Arguments: map[string]interface{}{},
+			},
+			expectedErrorCode: -32602,
+			errorMsgContains:  "",
+		},
+		{
+			name: "argument too long",
+			params: models.MCPPromptsGetParams{
+				Name: "test-error-prompt",
+				Arguments: map[string]interface{}{
+					"input": strings.Repeat("a", 200),
+				},
+			},
+			expectedErrorCode: -32602,
+			errorMsgContains:  "",
 		},
 	}
 
-	response4 := server.handlePromptsGet(getMessage4)
-	if response4.Error == nil {
-		t.Error("Expected error for argument too long")
-	}
-	if response4.Error.Code != -32602 {
-		t.Errorf("Expected error code -32602, got %d", response4.Error.Code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			message := &models.MCPMessage{
+				JSONRPC: "2.0",
+				ID:      "test-" + tt.name,
+				Method:  "prompts/get",
+				Params:  tt.params,
+			}
+
+			response := server.handlePromptsGet(message)
+
+			if response.Error == nil {
+				t.Errorf("Expected error for %s", tt.name)
+				return
+			}
+
+			if response.Error.Code != tt.expectedErrorCode {
+				t.Errorf("Expected error code %d, got %d", tt.expectedErrorCode, response.Error.Code)
+			}
+
+			if tt.errorMsgContains != "" && !strings.Contains(response.Error.Message, tt.errorMsgContains) {
+				t.Errorf("Expected error message to contain '%s', got '%s'", tt.errorMsgContains, response.Error.Message)
+			}
+		})
 	}
 }
 
 func TestPromptsIntegrationFlow(t *testing.T) {
 	server := NewMCPServer()
 
-	// Create temporary prompts directory for testing
-	tmpDir := t.TempDir()
 	testPromptContent := `{
 		"name": "test-integration-prompt",
 		"description": "A test prompt for integration testing",
@@ -362,18 +351,7 @@ func TestPromptsIntegrationFlow(t *testing.T) {
 		]
 	}`
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "test-integration-prompt.json"), []byte(testPromptContent), 0644); err != nil {
-		t.Fatalf("Failed to create test prompt file: %v", err)
-	}
-
-	// Update prompt manager to use test directory
-	logger := logging.NewStructuredLogger("test")
-	server.promptManager = prompts.NewPromptManager(tmpDir, server.cache, server.monitor, logger)
-
-	// Load prompts
-	if err := server.promptManager.LoadPrompts(); err != nil {
-		t.Fatalf("Failed to load prompts: %v", err)
-	}
+	setupTestPromptFromJSON(t, server, "test-integration-prompt", testPromptContent)
 
 	// Step 1: List available prompts
 	listJSON := `{"jsonrpc":"2.0","id":"list-1","method":"prompts/list"}`
