@@ -60,21 +60,9 @@ func TestStopWatching(t *testing.T) {
 	}
 }
 
-func TestFileSystemMonitorIntegration(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "monitor_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	monitor, err := NewFileSystemMonitor()
-	if err != nil {
-		t.Fatalf("Failed to create file system monitor: %v", err)
-	}
-	defer monitor.StopWatching()
-
-	// Channel to collect events
+// setupEventCollection initializes event channels and callbacks for testing
+func setupEventCollection(t *testing.T) (chan models.FileEvent, *sync.Mutex, *[]models.FileEvent, func(models.FileEvent)) {
+	t.Helper()
 	eventChan := make(chan models.FileEvent, 10)
 	var mu sync.Mutex
 	var events []models.FileEvent
@@ -89,18 +77,57 @@ func TestFileSystemMonitorIntegration(t *testing.T) {
 		}
 	}
 
-	// Start watching
-	err = monitor.WatchDirectory(tempDir, callback)
-	if err != nil {
-		t.Fatalf("Failed to start watching directory: %v", err)
+	return eventChan, &mu, &events, callback
+}
+
+// validateFileEvent validates a file event against expected values
+func validateFileEvent(t *testing.T, event models.FileEvent, expectedTypes []string, expectedPath string, expectIsDir bool) {
+	t.Helper()
+
+	typeMatched := false
+	for _, expectedType := range expectedTypes {
+		if event.Type == expectedType {
+			typeMatched = true
+			break
+		}
+	}
+	if !typeMatched {
+		t.Errorf("Expected event type to be one of %v, got %s", expectedTypes, event.Type)
 	}
 
-	// Give the monitor time to start
-	time.Sleep(100 * time.Millisecond)
+	if event.Path != expectedPath {
+		t.Errorf("Expected path %s, got %s", expectedPath, event.Path)
+	}
+	if event.IsDir != expectIsDir {
+		t.Errorf("Expected IsDir to be %v, got %v", expectIsDir, event.IsDir)
+	}
+}
 
-	// Test file creation
+// setupMonitorWithTempDir creates a monitor and temp directory for testing
+func setupMonitorWithTempDir(t *testing.T) (string, *FileSystemMonitor) {
+	t.Helper()
+
+	tempDir, err := os.MkdirTemp("", "monitor_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(tempDir) })
+
+	monitor, err := NewFileSystemMonitor()
+	if err != nil {
+		t.Fatalf("Failed to create file system monitor: %v", err)
+	}
+	t.Cleanup(func() { monitor.StopWatching() })
+
+	return tempDir, monitor
+}
+
+// testFileCreationEvent tests file creation event handling
+func testFileCreationEvent(t *testing.T, tempDir string, eventChan chan models.FileEvent) string {
+	t.Helper()
+
 	testFile := filepath.Join(tempDir, "test.md")
-	err = os.WriteFile(testFile, []byte("# Test\n\nContent"), 0644)
+	err := os.WriteFile(testFile, []byte("# Test\n\nContent"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
@@ -108,21 +135,19 @@ func TestFileSystemMonitorIntegration(t *testing.T) {
 	// Wait for event with timeout (could be create or modify)
 	select {
 	case event := <-eventChan:
-		if event.Type != "create" && event.Type != "modify" {
-			t.Errorf("Expected create or modify event, got %s", event.Type)
-		}
-		if event.Path != testFile {
-			t.Errorf("Expected path %s, got %s", testFile, event.Path)
-		}
-		if event.IsDir {
-			t.Error("Expected IsDir to be false for file")
-		}
+		validateFileEvent(t, event, []string{"create", "modify"}, testFile, false)
 	case <-time.After(2 * time.Second):
 		t.Error("Timeout waiting for file creation event")
 	}
 
-	// Test file modification
-	err = os.WriteFile(testFile, []byte("# Modified Test\n\nNew content"), 0644)
+	return testFile
+}
+
+// testFileModificationEvent tests file modification event handling
+func testFileModificationEvent(t *testing.T, testFile string, eventChan chan models.FileEvent) {
+	t.Helper()
+
+	err := os.WriteFile(testFile, []byte("# Modified Test\n\nNew content"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to modify test file: %v", err)
 	}
@@ -136,9 +161,13 @@ func TestFileSystemMonitorIntegration(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Error("Timeout waiting for modify event")
 	}
+}
 
-	// Test file deletion
-	err = os.Remove(testFile)
+// testFileDeletionEvent tests file deletion event handling
+func testFileDeletionEvent(t *testing.T, testFile string, eventChan chan models.FileEvent) {
+	t.Helper()
+
+	err := os.Remove(testFile)
 	if err != nil {
 		t.Fatalf("Failed to remove test file: %v", err)
 	}
@@ -154,64 +183,51 @@ func TestFileSystemMonitorIntegration(t *testing.T) {
 	}
 }
 
-func TestFileSystemMonitorDebouncing(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "monitor_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+func TestFileSystemMonitorIntegration(t *testing.T) {
+	tempDir, monitor := setupMonitorWithTempDir(t)
+	eventChan, _, _, callback := setupEventCollection(t)
 
-	monitor, err := NewFileSystemMonitor()
-	if err != nil {
-		t.Fatalf("Failed to create file system monitor: %v", err)
-	}
-	defer monitor.StopWatching()
-
-	// Channel to collect events
-	eventChan := make(chan models.FileEvent, 10)
-	var mu sync.Mutex
-	var eventCount int
-
-	callback := func(event models.FileEvent) {
-		mu.Lock()
-		eventCount++
-		mu.Unlock()
-		select {
-		case eventChan <- event:
-		default:
-		}
-	}
-
-	// Start watching
-	err = monitor.WatchDirectory(tempDir, callback)
+	err := monitor.WatchDirectory(tempDir, callback)
 	if err != nil {
 		t.Fatalf("Failed to start watching directory: %v", err)
 	}
 
-	// Give the monitor time to start
+	time.Sleep(100 * time.Millisecond)
+
+	testFile := testFileCreationEvent(t, tempDir, eventChan)
+	testFileModificationEvent(t, testFile, eventChan)
+	testFileDeletionEvent(t, testFile, eventChan)
+}
+
+func TestFileSystemMonitorDebouncing(t *testing.T) {
+	tempDir, monitor := setupMonitorWithTempDir(t)
+	_, mu, events, callback := setupEventCollection(t)
+
+	err := monitor.WatchDirectory(tempDir, callback)
+	if err != nil {
+		t.Fatalf("Failed to start watching directory: %v", err)
+	}
+
 	time.Sleep(100 * time.Millisecond)
 
 	testFile := filepath.Join(tempDir, "debounce_test.md")
 
 	// Rapidly modify the same file multiple times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		content := []byte("# Test " + string(rune('0'+i)) + "\n\nContent")
 		err = os.WriteFile(testFile, content, 0644)
 		if err != nil {
 			t.Fatalf("Failed to write test file: %v", err)
 		}
-		time.Sleep(50 * time.Millisecond) // Less than debounce delay
+		time.Sleep(50 * time.Millisecond)
 	}
 
-	// Wait for debounced events to settle
 	time.Sleep(1 * time.Second)
 
 	mu.Lock()
-	finalEventCount := eventCount
+	finalEventCount := len(*events)
 	mu.Unlock()
 
-	// Should have fewer events than writes due to debouncing
 	if finalEventCount >= 5 {
 		t.Errorf("Expected fewer than 5 events due to debouncing, got %d", finalEventCount)
 	}
@@ -221,80 +237,53 @@ func TestFileSystemMonitorDebouncing(t *testing.T) {
 }
 
 func TestFileSystemMonitorNonMarkdownFiles(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "monitor_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir, monitor := setupMonitorWithTempDir(t)
+	eventChan, mu, events, callback := setupEventCollection(t)
 
-	monitor, err := NewFileSystemMonitor()
-	if err != nil {
-		t.Fatalf("Failed to create file system monitor: %v", err)
-	}
-	defer monitor.StopWatching()
-
-	// Channel to collect events
-	eventChan := make(chan models.FileEvent, 10)
-	var mu sync.Mutex
-	var events []models.FileEvent
-
-	callback := func(event models.FileEvent) {
-		mu.Lock()
-		events = append(events, event)
-		mu.Unlock()
-		select {
-		case eventChan <- event:
-		default:
-		}
-	}
-
-	// Start watching
-	err = monitor.WatchDirectory(tempDir, callback)
+	err := monitor.WatchDirectory(tempDir, callback)
 	if err != nil {
 		t.Fatalf("Failed to start watching directory: %v", err)
 	}
 
-	// Give the monitor time to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Create non-markdown files (should be ignored)
-	txtFile := filepath.Join(tempDir, "test.txt")
-	err = os.WriteFile(txtFile, []byte("Text content"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create txt file: %v", err)
+	tests := []struct {
+		name          string
+		filename      string
+		content       []byte
+		shouldTrigger bool
+	}{
+		{"text file", "test.txt", []byte("Text content"), false},
+		{"json file", "test.json", []byte(`{"key": "value"}`), false},
+		{"markdown file", "test.md", []byte("# Test\n\nContent"), true},
 	}
 
-	jsonFile := filepath.Join(tempDir, "test.json")
-	err = os.WriteFile(jsonFile, []byte(`{"key": "value"}`), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create json file: %v", err)
+	var expectedPath string
+	for _, tt := range tests {
+		filePath := filepath.Join(tempDir, tt.filename)
+		err := os.WriteFile(filePath, tt.content, 0644)
+		if err != nil {
+			t.Fatalf("Failed to create %s: %v", tt.name, err)
+		}
+		if tt.shouldTrigger {
+			expectedPath = filePath
+		}
 	}
 
-	// Create markdown file (should trigger event)
-	mdFile := filepath.Join(tempDir, "test.md")
-	err = os.WriteFile(mdFile, []byte("# Test\n\nContent"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create md file: %v", err)
-	}
-
-	// Wait for potential events
 	time.Sleep(1 * time.Second)
 
 	mu.Lock()
-	eventCount := len(events)
+	eventCount := len(*events)
 	mu.Unlock()
 
-	// Should only have one event for the markdown file
 	if eventCount != 1 {
 		t.Errorf("Expected 1 event for markdown file only, got %d", eventCount)
 	}
 
-	// Verify the event is for the markdown file
 	select {
 	case event := <-eventChan:
-		if event.Path != mdFile {
-			t.Errorf("Expected event for %s, got %s", mdFile, event.Path)
+		if event.Path != expectedPath {
+			t.Errorf("Expected event for %s, got %s", expectedPath, event.Path)
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Error("Expected at least one event for markdown file")
@@ -302,20 +291,8 @@ func TestFileSystemMonitorNonMarkdownFiles(t *testing.T) {
 }
 
 func TestMultipleCallbacks(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "monitor_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir, monitor := setupMonitorWithTempDir(t)
 
-	monitor, err := NewFileSystemMonitor()
-	if err != nil {
-		t.Fatalf("Failed to create file system monitor: %v", err)
-	}
-	defer monitor.StopWatching()
-
-	// Multiple callback counters
 	var callback1Count, callback2Count int
 	var mu sync.Mutex
 
@@ -331,8 +308,7 @@ func TestMultipleCallbacks(t *testing.T) {
 		mu.Unlock()
 	}
 
-	// Register multiple callbacks
-	err = monitor.WatchDirectory(tempDir, callback1)
+	err := monitor.WatchDirectory(tempDir, callback1)
 	if err != nil {
 		t.Fatalf("Failed to register first callback: %v", err)
 	}
@@ -342,17 +318,14 @@ func TestMultipleCallbacks(t *testing.T) {
 		t.Fatalf("Failed to register second callback: %v", err)
 	}
 
-	// Give the monitor time to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Create a file to trigger events
 	testFile := filepath.Join(tempDir, "test.md")
 	err = os.WriteFile(testFile, []byte("# Test\n\nContent"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	// Wait for events to be processed
 	time.Sleep(1 * time.Second)
 
 	mu.Lock()
@@ -360,14 +333,12 @@ func TestMultipleCallbacks(t *testing.T) {
 	count2 := callback2Count
 	mu.Unlock()
 
-	// Both callbacks should have been called at least once (may get multiple events)
 	if count1 < 1 {
 		t.Errorf("Expected callback1 to be called at least once, got %d", count1)
 	}
 	if count2 < 1 {
 		t.Errorf("Expected callback2 to be called at least once, got %d", count2)
 	}
-	// Both should have the same count since they receive the same events
 	if count1 != count2 {
 		t.Errorf("Expected both callbacks to have same count, got %d and %d", count1, count2)
 	}

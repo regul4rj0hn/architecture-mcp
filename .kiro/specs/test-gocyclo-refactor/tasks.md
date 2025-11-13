@@ -22,17 +22,17 @@
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 3. Refactor pkg/monitor/monitor_test.go
-  - [ ] 3.1 Extract event collection setup helper
+- [x] 3. Refactor pkg/monitor/monitor_test.go
+  - [x] 3.1 Extract event collection setup helper
     - Create setupEventCollection function to initialize event channels and callbacks
     - _Requirements: 2.1, 2.4_
-  - [ ] 3.2 Split TestFileSystemMonitorIntegration into focused helpers
+  - [x] 3.2 Split TestFileSystemMonitorIntegration into focused helpers
     - Create testFileCreationEvent helper for file creation testing
     - Create testFileModificationEvent helper for file modification testing
     - Create testFileDeletionEvent helper for file deletion testing
     - Create validateFileEvent helper for event validation
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.1_
-  - [ ] 3.3 Verify tests pass and complexity is below 15
+  - [x] 3.3 Verify tests pass and complexity is below 15
     - Run go test for the file
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
