@@ -88,8 +88,8 @@
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 8. Refactor pkg/errors/graceful_degradation_test.go
-  - [ ] 8.1 Split TestGracefulDegradationManager into separate test functions
+- [x] 8. Refactor pkg/errors/graceful_degradation_test.go
+  - [x] 8.1 Split TestGracefulDegradationManager into separate test functions
     - Create TestGracefulDegradationRegistration for component registration
     - Create TestGracefulDegradationErrorRecording for error threshold testing
     - Create TestGracefulDegradationTimeWindow for time window cleanup testing
@@ -98,10 +98,10 @@
     - Create TestGracefulDegradationExecution for execution path testing
     - Create TestGracefulDegradationForceRecovery for force recovery testing
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.5_
-  - [ ] 8.2 Create helper function setupDegradationManager
+  - [x] 8.2 Create helper function setupDegradationManager
     - Extract common manager setup pattern
     - _Requirements: 2.1, 2.4_
-  - [ ] 8.3 Verify tests pass and complexity is below 15
+  - [x] 8.3 Verify tests pass and complexity is below 15
     - Run go test for the file
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
