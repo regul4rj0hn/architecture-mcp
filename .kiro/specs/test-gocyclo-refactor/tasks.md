@@ -5,8 +5,8 @@
   - Include year 2025 and appropriate copyright holder
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 2. Refactor pkg/errors/circuit_breaker_test.go
-  - [ ] 2.1 Split TestCircuitBreaker into separate test functions
+- [x] 2. Refactor pkg/errors/circuit_breaker_test.go
+  - [x] 2.1 Split TestCircuitBreaker into separate test functions
     - Create TestCircuitBreakerInitialState for initial state verification
     - Create TestCircuitBreakerOpensAfterFailures for failure threshold testing
     - Create TestCircuitBreakerRejectsWhenOpen for open state rejection testing
@@ -14,10 +14,10 @@
     - Create TestCircuitBreakerClosesAfterSuccess for recovery testing
     - Create TestCircuitBreakerReopensOnFailure for half-open failure testing
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 4.2_
-  - [ ] 2.2 Create helper function executeFailingOperations
+  - [x] 2.2 Create helper function executeFailingOperations
     - Extract common pattern for executing multiple failing operations
     - _Requirements: 2.1, 2.4_
-  - [ ] 2.3 Verify tests pass and complexity is below 15
+  - [x] 2.3 Verify tests pass and complexity is below 15
     - Run go test for the file
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_

@@ -6,170 +6,155 @@ import (
 	"time"
 )
 
-func TestCircuitBreaker(t *testing.T) {
-	t.Run("Circuit breaker starts in closed state", func(t *testing.T) {
-		config := DefaultCircuitBreakerConfig("test")
-		cb := NewCircuitBreaker(config)
-
-		if cb.GetState() != CircuitBreakerClosed {
-			t.Errorf("Expected initial state to be CLOSED, got %s", cb.GetState())
-		}
-	})
-
-	t.Run("Circuit breaker opens after max failures", func(t *testing.T) {
-		config := CircuitBreakerConfig{
-			MaxFailures:      3,
-			ResetTimeout:     1 * time.Second,
-			SuccessThreshold: 2,
-			Name:             "test",
-		}
-		cb := NewCircuitBreaker(config)
-
-		// Execute failing operations
-		for i := 0; i < 3; i++ {
-			err := cb.Execute(func() error {
-				return fmt.Errorf("test error %d", i)
-			})
-			if err == nil {
-				t.Errorf("Expected error from failing operation")
-			}
-		}
-
-		if cb.GetState() != CircuitBreakerOpen {
-			t.Errorf("Expected state to be OPEN after max failures, got %s", cb.GetState())
-		}
-	})
-
-	t.Run("Circuit breaker rejects requests when open", func(t *testing.T) {
-		config := CircuitBreakerConfig{
-			MaxFailures:      2,
-			ResetTimeout:     1 * time.Second,
-			SuccessThreshold: 1,
-			Name:             "test",
-		}
-		cb := NewCircuitBreaker(config)
-
-		// Cause failures to open circuit
-		for i := 0; i < 2; i++ {
-			cb.Execute(func() error {
-				return fmt.Errorf("test error")
-			})
-		}
-
-		// Try to execute when circuit is open
+// executeFailingOperations executes multiple failing operations on a circuit breaker
+func executeFailingOperations(t *testing.T, cb *CircuitBreaker, count int) {
+	t.Helper()
+	for range count {
 		err := cb.Execute(func() error {
-			return nil
+			return fmt.Errorf("test error")
 		})
-
 		if err == nil {
-			t.Errorf("Expected circuit breaker to reject request when open")
+			t.Errorf("Expected error from failing operation")
 		}
+	}
+}
 
-		structuredErr, ok := err.(*StructuredError)
-		if !ok {
-			t.Errorf("Expected structured error from circuit breaker")
-		}
-		if structuredErr.Code != "CIRCUIT_BREAKER_OPEN" {
-			t.Errorf("Expected circuit breaker open error code, got %s", structuredErr.Code)
-		}
+// openCircuit opens a circuit breaker by executing failing operations
+func openCircuit(t *testing.T, cb *CircuitBreaker, failureCount int) {
+	t.Helper()
+	executeFailingOperations(t, cb, failureCount)
+	if cb.GetState() != CircuitBreakerOpen {
+		t.Fatalf("Failed to open circuit, state: %s", cb.GetState())
+	}
+}
+
+func TestCircuitBreakerInitialState(t *testing.T) {
+	config := DefaultCircuitBreakerConfig("test")
+	cb := NewCircuitBreaker(config)
+
+	if cb.GetState() != CircuitBreakerClosed {
+		t.Errorf("Expected initial state to be CLOSED, got %s", cb.GetState())
+	}
+}
+
+func TestCircuitBreakerOpensAfterFailures(t *testing.T) {
+	config := CircuitBreakerConfig{
+		MaxFailures:      3,
+		ResetTimeout:     1 * time.Second,
+		SuccessThreshold: 2,
+		Name:             "test",
+	}
+	cb := NewCircuitBreaker(config)
+
+	executeFailingOperations(t, cb, 3)
+
+	if cb.GetState() != CircuitBreakerOpen {
+		t.Errorf("Expected state to be OPEN after max failures, got %s", cb.GetState())
+	}
+}
+
+func TestCircuitBreakerRejectsWhenOpen(t *testing.T) {
+	config := CircuitBreakerConfig{
+		MaxFailures:      2,
+		ResetTimeout:     1 * time.Second,
+		SuccessThreshold: 1,
+		Name:             "test",
+	}
+	cb := NewCircuitBreaker(config)
+
+	executeFailingOperations(t, cb, 2)
+
+	// Try to execute when circuit is open
+	err := cb.Execute(func() error {
+		return nil
 	})
 
-	t.Run("Circuit breaker transitions to half-open after timeout", func(t *testing.T) {
-		config := CircuitBreakerConfig{
-			MaxFailures:      2,
-			ResetTimeout:     100 * time.Millisecond,
-			SuccessThreshold: 1,
-			Name:             "test",
-		}
-		cb := NewCircuitBreaker(config)
+	if err == nil {
+		t.Errorf("Expected circuit breaker to reject request when open")
+	}
 
-		// Open the circuit
-		for i := 0; i < 2; i++ {
-			cb.Execute(func() error {
-				return fmt.Errorf("test error")
-			})
-		}
+	structuredErr, ok := err.(*StructuredError)
+	if !ok {
+		t.Errorf("Expected structured error from circuit breaker")
+	}
+	if structuredErr.Code != "CIRCUIT_BREAKER_OPEN" {
+		t.Errorf("Expected circuit breaker open error code, got %s", structuredErr.Code)
+	}
+}
 
-		// Wait for reset timeout
-		time.Sleep(150 * time.Millisecond)
+func TestCircuitBreakerStateTransitions(t *testing.T) {
+	tests := []struct {
+		name             string
+		successThreshold int
+		successCount     int
+		failAfterTimeout bool
+		expectedState    CircuitBreakerState
+		shouldExecute    bool
+	}{
+		{
+			name:             "transitions to half-open after timeout",
+			successThreshold: 1,
+			successCount:     1,
+			failAfterTimeout: false,
+			expectedState:    CircuitBreakerClosed,
+			shouldExecute:    true,
+		},
+		{
+			name:             "closes after success threshold met",
+			successThreshold: 2,
+			successCount:     2,
+			failAfterTimeout: false,
+			expectedState:    CircuitBreakerClosed,
+			shouldExecute:    true,
+		},
+		{
+			name:             "reopens on failure in half-open",
+			successThreshold: 2,
+			successCount:     0,
+			failAfterTimeout: true,
+			expectedState:    CircuitBreakerOpen,
+			shouldExecute:    false,
+		},
+	}
 
-		// Execute a successful operation (should transition to half-open first)
-		executed := false
-		err := cb.Execute(func() error {
-			executed = true
-			return nil
-		})
-
-		if err != nil {
-			t.Errorf("Expected successful execution after timeout, got error: %v", err)
-		}
-		if !executed {
-			t.Errorf("Expected function to be executed after timeout")
-		}
-	})
-
-	t.Run("Circuit breaker closes after successful operations in half-open", func(t *testing.T) {
-		config := CircuitBreakerConfig{
-			MaxFailures:      2,
-			ResetTimeout:     100 * time.Millisecond,
-			SuccessThreshold: 2,
-			Name:             "test",
-		}
-		cb := NewCircuitBreaker(config)
-
-		// Open the circuit
-		for i := 0; i < 2; i++ {
-			cb.Execute(func() error {
-				return fmt.Errorf("test error")
-			})
-		}
-
-		// Wait for reset timeout
-		time.Sleep(150 * time.Millisecond)
-
-		// Execute successful operations to close circuit
-		for i := 0; i < 2; i++ {
-			err := cb.Execute(func() error {
-				return nil
-			})
-			if err != nil {
-				t.Errorf("Expected successful execution, got error: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := CircuitBreakerConfig{
+				MaxFailures:      2,
+				ResetTimeout:     100 * time.Millisecond,
+				SuccessThreshold: tt.successThreshold,
+				Name:             "test",
 			}
-		}
+			cb := NewCircuitBreaker(config)
 
-		if cb.GetState() != CircuitBreakerClosed {
-			t.Errorf("Expected state to be CLOSED after successful operations, got %s", cb.GetState())
-		}
-	})
+			openCircuit(t, cb, 2)
+			time.Sleep(150 * time.Millisecond)
 
-	t.Run("Circuit breaker reopens on failure in half-open state", func(t *testing.T) {
-		config := CircuitBreakerConfig{
-			MaxFailures:      2,
-			ResetTimeout:     100 * time.Millisecond,
-			SuccessThreshold: 2,
-			Name:             "test",
-		}
-		cb := NewCircuitBreaker(config)
+			if tt.failAfterTimeout {
+				cb.Execute(func() error {
+					return fmt.Errorf("failure in half-open")
+				})
+			} else {
+				executed := false
+				for range tt.successCount {
+					err := cb.Execute(func() error {
+						executed = true
+						return nil
+					})
+					if err != nil {
+						t.Errorf("Expected successful execution, got error: %v", err)
+					}
+				}
+				if tt.shouldExecute && !executed {
+					t.Errorf("Expected function to be executed")
+				}
+			}
 
-		// Open the circuit
-		for i := 0; i < 2; i++ {
-			cb.Execute(func() error {
-				return fmt.Errorf("test error")
-			})
-		}
-
-		// Wait for reset timeout
-		time.Sleep(150 * time.Millisecond)
-
-		// Execute a failing operation (should reopen circuit)
-		cb.Execute(func() error {
-			return fmt.Errorf("failure in half-open")
+			if cb.GetState() != tt.expectedState {
+				t.Errorf("Expected state %s, got %s", tt.expectedState, cb.GetState())
+			}
 		})
-
-		if cb.GetState() != CircuitBreakerOpen {
-			t.Errorf("Expected state to be OPEN after failure in half-open, got %s", cb.GetState())
-		}
-	})
+	}
 }
 
 func TestCircuitBreakerStats(t *testing.T) {
@@ -253,7 +238,7 @@ func TestCircuitBreakerStateChangeCallback(t *testing.T) {
 		})
 
 		// Open the circuit
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			cb.Execute(func() error {
 				return fmt.Errorf("test error")
 			})
@@ -335,7 +320,7 @@ func TestCircuitBreakerManager(t *testing.T) {
 		unhealthy := manager.GetOrCreate("unhealthy", config)
 
 		// Make one unhealthy
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			unhealthy.Execute(func() error {
 				return fmt.Errorf("error")
 			})
