@@ -231,3 +231,188 @@ The refactoring will proceed in this order to minimize risk:
 9. **internal/server/integration_test.go** - Highest complexity, most critical
 
 This order allows us to build confidence with simpler refactorings before tackling the most complex integration tests.
+
+## Race Condition Fixes
+
+### Overview
+
+The race detector has identified several data race conditions in concurrent code. These must be fixed to ensure thread-safe operation and reliable test execution in CI environments.
+
+### Identified Race Conditions
+
+#### 1. Cache System (pkg/cache/cache.go)
+
+**Issue**: The `Get()` method updates the `lastAccessed` map and stats without proper synchronization.
+
+**Location**: Lines 107, 113 in cache.go
+
+**Root Cause**: 
+- The `lastAccessed` map is accessed without holding the write lock
+- Stats updates occur outside the mutex protection
+
+**Solution**:
+- Move `lastAccessed` map updates inside the write lock section
+- Ensure stats updates are protected by the mutex
+- Use `defer` to ensure lock is always released
+
+**Implementation**:
+```go
+func (c *DocumentCache) Get(uri string) (*models.Document, bool) {
+    c.mu.RLock()
+    doc, exists := c.documents[uri]
+    c.mu.RUnlock()
+    
+    if exists {
+        c.mu.Lock()
+        c.lastAccessed[uri] = time.Now()
+        c.stats.Hits++
+        c.mu.Unlock()
+    } else {
+        c.mu.Lock()
+        c.stats.Misses++
+        c.mu.Unlock()
+    }
+    
+    return doc, exists
+}
+```
+
+#### 2. Monitor System (pkg/monitor/monitor.go)
+
+**Issue**: The `debounceTimers` map is accessed without proper synchronization when deleting entries.
+
+**Location**: Line 92 in monitor.go
+
+**Root Cause**:
+- Map deletion occurs in a goroutine without mutex protection
+- Multiple goroutines can access the map concurrently
+
+**Solution**:
+- Add mutex protection around all `debounceTimers` map operations
+- Ensure the mutex is held during map reads, writes, and deletes
+
+**Implementation**:
+```go
+// In monitorEvents function, protect map access:
+m.mu.Lock()
+delete(m.debounceTimers, event.Name)
+m.mu.Unlock()
+```
+
+#### 3. Error System - Circuit Breaker (pkg/errors/circuit_breaker_test.go)
+
+**Issue**: Test code accesses callback state variables without synchronization.
+
+**Location**: Lines 265, 268, 271 in circuit_breaker_test.go
+
+**Root Cause**:
+- Callback variables are accessed from both the main test goroutine and callback goroutine
+- No synchronization mechanism protects these accesses
+
+**Solution**:
+- Use `sync.Mutex` to protect callback state variables
+- Lock before reading/writing callback state in tests
+
+**Implementation**:
+```go
+var (
+    callbackMu sync.Mutex
+    callbackInvoked bool
+    oldState CircuitState
+    newState CircuitState
+)
+
+// In callback:
+callbackMu.Lock()
+callbackInvoked = true
+oldState = old
+newState = new
+callbackMu.Unlock()
+
+// In test assertions:
+callbackMu.Lock()
+if !callbackInvoked {
+    t.Error("callback not invoked")
+}
+callbackMu.Unlock()
+```
+
+#### 4. Error System - Graceful Degradation (pkg/errors/graceful_degradation_test.go)
+
+**Issue**: Test code accesses callback state variables without synchronization.
+
+**Location**: Lines 302-305, 323, 326, 329, 332 in graceful_degradation_test.go
+
+**Root Cause**:
+- Similar to circuit breaker, callback variables accessed without protection
+- Multiple goroutines access shared state
+
+**Solution**:
+- Use `sync.Mutex` to protect callback state variables
+- Same pattern as circuit breaker fix
+
+#### 5. Prompts System (pkg/prompts/manager_test.go)
+
+**Issue**: Test code accesses reload state without synchronization.
+
+**Location**: Lines 551 in manager_test.go
+
+**Root Cause**:
+- File event handling triggers reload in a separate goroutine
+- Test checks reload state without synchronization
+
+**Solution**:
+- Use `sync.Mutex` or atomic operations to protect reload state
+- Add proper synchronization in test assertions
+
+**Implementation**:
+```go
+var (
+    reloadMu sync.Mutex
+    reloadTriggered bool
+)
+
+// In file event handler:
+reloadMu.Lock()
+reloadTriggered = true
+reloadMu.Unlock()
+
+// In test:
+time.Sleep(600 * time.Millisecond) // Wait for debounce
+reloadMu.Lock()
+triggered := reloadTriggered
+reloadMu.Unlock()
+
+if !triggered {
+    t.Error("reload not triggered")
+}
+```
+
+#### 6. Integration Tests (internal/server/integration_test.go)
+
+**Issue**: Cache operations in integration tests trigger race conditions.
+
+**Location**: Lines 104, 123 in integration_test.go
+
+**Root Cause**:
+- Integration test accesses cache while file monitor goroutines also access it
+- No synchronization between test and background operations
+
+**Solution**:
+- Ensure proper synchronization when verifying cache state
+- Add delays or explicit synchronization points
+- Fix underlying cache race conditions (see #1 above)
+
+### Testing Strategy for Race Fixes
+
+1. **Verify Each Fix**: Run `go test -race -short ./...` after each fix
+2. **Isolate Tests**: Test individual packages to isolate race conditions
+3. **CI Verification**: Ensure GitHub Actions passes with race detector enabled
+
+### Implementation Order for Race Fixes
+
+1. **Cache System** - Most critical, affects multiple tests
+2. **Monitor System** - Affects file watching tests
+3. **Error System Tests** - Test-only fixes, lower risk
+4. **Prompts System Tests** - Test-only fixes, lower risk
+5. **Integration Tests** - Depends on cache fix, test last
