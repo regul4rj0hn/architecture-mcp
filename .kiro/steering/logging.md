@@ -111,7 +111,16 @@ startupLogger.WithContext("phase", "initialization").
 
 **MCP protocol logging**:
 ```go
+// Log incoming message
+loggingManager.GetLogger("mcp_protocol").
+    WithContext("direction", "Client -> Server").
+    WithContext("mcp_method", method).
+    WithContext("request_id", requestID).
+    Info("message: " + message.Error.Message)
+
+// Log outgoing response
 mcpLogger := loggingManager.GetLogger("mcp_protocol").
+    WithContext("direction", "Server -> Client").
     WithContext("mcp_method", method).
     WithContext("request_id", requestID).
     WithContext("duration_ms", duration.Milliseconds()).

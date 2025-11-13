@@ -38,7 +38,7 @@ func NewStructuredLogger(component string) *StructuredLogger {
 	}
 
 	return &StructuredLogger{
-		logger:    slog.New(slog.NewJSONHandler(os.Stdout, opts)),
+		logger:    slog.New(slog.NewJSONHandler(os.Stderr, opts)),
 		component: component,
 		context:   make(map[string]any),
 	}

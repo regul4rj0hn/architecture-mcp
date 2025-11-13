@@ -335,14 +335,9 @@ func (s *MCPSession) forwardServerToClient() {
 }
 
 func (s *MCPSession) monitorServerErrors() {
-	scanner := bufio.NewScanner(s.stderr)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		s.logger.WithContext("stream", "stderr").
-			WithContext("message", line).
-			Warn("Server stderr output")
-	}
+	// Simply copy MCP server stderr to bridge stderr
+	// This preserves the original JSON logs without re-parsing
+	io.Copy(os.Stderr, s.stderr)
 }
 
 func (s *MCPSession) Close() {

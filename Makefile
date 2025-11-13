@@ -98,12 +98,12 @@ run: build
 	$(BINARY_PATH)
 
 # Run the bridge server
-run-bridge: build build-bridge
+run-bridge: build-bridge
 	@echo "Running $(BRIDGE_BINARY_NAME)..."
 	$(BRIDGE_BINARY_PATH)
 
 # Run the bridge server with custom port
-run-bridge-port: build build-bridge
+run-bridge-port: build-bridge
 	@echo "Running $(BRIDGE_BINARY_NAME) on port 8081..."
 	$(BRIDGE_BINARY_PATH) -port 8081
 

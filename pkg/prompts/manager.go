@@ -292,6 +292,7 @@ func (pm *PromptManager) RenderPrompt(name string, arguments map[string]interfac
 				WithContext("prompt_name", name).
 				WithContext("message_index", i).
 				WithContext("duration_ms", duration.Milliseconds()).
+				WithContext("rendered_template_preview", truncateString(renderedText, 200)).
 				Error("Failed to embed resources in prompt")
 			return nil, fmt.Errorf("failed to embed resources in message %d: %w", i, err)
 		}
@@ -504,4 +505,12 @@ func (pm *PromptManager) GetPerformanceMetrics() map[string]interface{} {
 		"resource_embeddings":        pm.stats.ResourceEmbeddings,
 		"resource_cache_hit_rate":    resourceCacheHitRate,
 	}
+}
+
+// truncateString truncates a string to maxLen characters, adding "..." if truncated
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

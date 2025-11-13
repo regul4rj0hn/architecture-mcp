@@ -35,3 +35,12 @@
   - Verify log levels are correctly applied
   - Verify context fields are present in all log messages
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5_
+
+- [x] 5. Restore directional logging indicators for MCP protocol messages
+  - Add "direction" context field to MCP protocol logs in internal/server/server.go
+  - Log "Client -> Server" direction when receiving messages in handleMessage
+  - Log "Server -> Client" direction when sending responses in handleMessage
+  - Include direction in both the structured context and log message text
+  - Maintain all existing context fields (mcp_method, request_id, duration_ms, success)
+  - Apply to all MCP protocol methods (initialize, resources/*, prompts/*, tools/*, completion/*)
+  - _Requirements: 3.3_

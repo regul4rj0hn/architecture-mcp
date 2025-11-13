@@ -291,9 +291,17 @@ func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage
 	var success bool = true
 	var errorMsg string
 
+	// Log incoming message
+	s.loggingManager.GetLogger("mcp_protocol").
+		WithContext("direction", "Client -> Server").
+		WithContext("mcp_method", message.Method).
+		WithContext("request_id", message.ID).
+		Info("Client -> Server: " + message.Method)
+
 	defer func() {
 		duration := time.Since(startTime)
 		mcpLogger := s.loggingManager.GetLogger("mcp_protocol").
+			WithContext("direction", "Server -> Client").
 			WithContext("mcp_method", message.Method).
 			WithContext("request_id", message.ID).
 			WithContext("duration_ms", duration.Milliseconds()).

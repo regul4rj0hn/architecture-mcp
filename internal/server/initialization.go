@@ -133,6 +133,11 @@ func (s *MCPServer) initializePromptsSystem() error {
 		return err
 	}
 
+	// Get loaded prompts count
+	loadedPrompts := s.promptManager.ListPrompts()
+	s.logger.WithContext("prompt_count", len(loadedPrompts)).
+		Info("Prompts loaded successfully")
+
 	// Set up file system monitoring for prompts directory
 	if s.monitor != nil {
 		if err := s.promptManager.StartWatching(); err != nil {

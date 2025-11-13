@@ -1,6 +1,6 @@
 {
   "name": "create-adr",
-  "description": "Create a new Architecture Decision Record (ADR) following our template",
+  "description": "Interactive guide to create a new Architecture Decision Record (ADR)",
   "arguments": [
     {
       "name": "topic",
@@ -14,7 +14,7 @@
       "role": "user",
       "content": {
         "type": "text",
-        "text": "Please help me create a new Architecture Decision Record (ADR) for the following topic:\n\n# Decision Topic\n\n{{topic}}\n\n# ADR Template and Examples\n\nHere is our ADR template and example ADRs to follow:\n\n{{resource:architecture://adr/adr-template}}\n\n{{resource:architecture://adr/adr-example}}\n\n{{resource:architecture://adr/001-microservices-architecture}}\n\n# Instructions\n\nPlease create a draft ADR that:\n1. Follows the structure defined in our ADR template\n2. Includes all required sections: Title, Status, Context, Decision, Consequences\n3. Uses a similar style and level of detail as the example ADRs\n4. Provides a clear and concise explanation of the decision\n5. Considers both positive and negative consequences\n6. Uses appropriate technical language and terminology\n\nThe ADR should be ready to save as a markdown file with minimal editing. Include a suggested filename in the format `NNN-kebab-case-title.md` where NNN is the next available number."
+        "text": "I want to create a new Architecture Decision Record (ADR) for: {{topic}}\n\nPlease guide me through creating this ADR by asking me questions about each section. After I provide all the information, generate the complete ADR document following this structure:\n\n# ADR Structure\n- Title and metadata (number, status, date, deciders)\n- Context (problem statement, constraints, assumptions)\n- Decision (what was decided and rationale)\n- Alternatives Considered (with pros/cons for each)\n- Consequences (positive, negative, risks)\n- Implementation (action items, timeline, success metrics)\n- References and notes\n\nStart by asking me about the context and problem statement. Guide me through each section one at a time, asking clarifying questions as needed. Once we've covered all sections, generate the final ADR in markdown format ready to save as a file.\n\nLet's begin with the first question."
       }
     }
   ]

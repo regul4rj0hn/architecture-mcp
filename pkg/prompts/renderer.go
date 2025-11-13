@@ -104,7 +104,7 @@ func (tr *TemplateRenderer) EmbedResources(template string) (string, error) {
 
 		documents, err := tr.ResolveResourcePattern(pattern)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve resource pattern %s: %w", pattern, err)
+			return "", fmt.Errorf("failed to resolve resource pattern '%s': %w", pattern, err)
 		}
 
 		resourceCount += len(documents)
