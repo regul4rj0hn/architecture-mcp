@@ -531,8 +531,9 @@ func TestHandleFileEvent(t *testing.T) {
 		t.Fatalf("LoadPrompts() unexpected error: %v", err)
 	}
 
-	if len(pm.registry) != 1 {
-		t.Errorf("Expected 1 prompt, got %d", len(pm.registry))
+	prompts := pm.ListPrompts()
+	if len(prompts) != 1 {
+		t.Errorf("Expected 1 prompt, got %d", len(prompts))
 	}
 
 	// Simulate file event
@@ -548,8 +549,9 @@ func TestHandleFileEvent(t *testing.T) {
 	time.Sleep(600 * time.Millisecond)
 
 	// Verify reload happened (registry should still have the prompt)
-	if len(pm.registry) != 1 {
-		t.Errorf("Expected 1 prompt after file event, got %d", len(pm.registry))
+	prompts = pm.ListPrompts()
+	if len(prompts) != 1 {
+		t.Errorf("Expected 1 prompt after file event, got %d", len(prompts))
 	}
 }
 

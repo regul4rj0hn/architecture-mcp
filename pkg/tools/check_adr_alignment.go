@@ -168,17 +168,44 @@ func (cat *CheckADRAlignmentTool) analyzeAlignment(decisionDescription, decision
 
 // extractKeywords extracts important keywords from decision text
 func (cat *CheckADRAlignmentTool) extractKeywords(decisionDescription, decisionContext string) []string {
-	// Combine description and context
-	text := decisionDescription
-	if decisionContext != "" {
-		text = text + " " + decisionContext
+	text := cat.combineText(decisionDescription, decisionContext)
+	tokens := cat.tokenizeText(text)
+	return cat.filterKeywords(tokens)
+}
+
+func (cat *CheckADRAlignmentTool) combineText(description, context string) string {
+	text := description
+	if context != "" {
+		text = text + " " + context
+	}
+	return strings.ToLower(text)
+}
+
+func (cat *CheckADRAlignmentTool) tokenizeText(text string) []string {
+	return strings.FieldsFunc(text, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == ',' || r == '.' ||
+			r == ';' || r == ':' || r == '!' || r == '?' || r == '(' || r == ')'
+	})
+}
+
+func (cat *CheckADRAlignmentTool) filterKeywords(tokens []string) []string {
+	stopWords := cat.getStopWords()
+	keywordSet := make(map[string]bool)
+	var keywords []string
+
+	for _, token := range tokens {
+		token = strings.TrimSpace(token)
+		if cat.isValidKeyword(token, stopWords, keywordSet) {
+			keywords = append(keywords, token)
+			keywordSet[token] = true
+		}
 	}
 
-	// Convert to lowercase
-	text = strings.ToLower(text)
+	return keywords
+}
 
-	// Remove common stop words
-	stopWords := map[string]bool{
+func (cat *CheckADRAlignmentTool) getStopWords() map[string]bool {
+	return map[string]bool{
 		"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
 		"in": true, "on": true, "at": true, "to": true, "for": true, "of": true,
 		"with": true, "by": true, "from": true, "as": true, "is": true, "was": true,
@@ -188,25 +215,10 @@ func (cat *CheckADRAlignmentTool) extractKeywords(decisionDescription, decisionC
 		"might": true, "must": true, "can": true, "this": true, "that": true,
 		"these": true, "those": true, "we": true, "our": true, "us": true,
 	}
+}
 
-	// Tokenize
-	tokens := strings.FieldsFunc(text, func(r rune) bool {
-		return r == ' ' || r == '\t' || r == '\n' || r == ',' || r == '.' || r == ';' || r == ':' || r == '!' || r == '?' || r == '(' || r == ')'
-	})
-
-	// Filter and deduplicate
-	keywordSet := make(map[string]bool)
-	var keywords []string
-	for _, token := range tokens {
-		token = strings.TrimSpace(token)
-		// Keep tokens that are at least 3 characters and not stop words
-		if len(token) >= 3 && !stopWords[token] && !keywordSet[token] {
-			keywords = append(keywords, token)
-			keywordSet[token] = true
-		}
-	}
-
-	return keywords
+func (cat *CheckADRAlignmentTool) isValidKeyword(token string, stopWords, keywordSet map[string]bool) bool {
+	return len(token) >= 3 && !stopWords[token] && !keywordSet[token]
 }
 
 // analyzeADR analyzes a single ADR for alignment with the decision
@@ -304,7 +316,30 @@ func (cat *CheckADRAlignmentTool) extractADRStatus(content string) string {
 func (cat *CheckADRAlignmentTool) determineAlignment(adrContent, decisionLower string, status string, keywords []string) (string, string) {
 	adrContentLower := strings.ToLower(adrContent)
 
-	// Check for conflict indicators
+	// Check for conflicts first
+	if alignment, reason := cat.checkForConflicts(adrContentLower, status); alignment != "" {
+		return alignment, reason
+	}
+
+	// Check for opposing patterns
+	if alignment, reason := cat.checkOpposingPatterns(adrContentLower, keywords); alignment != "" {
+		return alignment, reason
+	}
+
+	// Check for decision alignment
+	if alignment, reason := cat.checkDecisionAlignment(adrContent, status, keywords); alignment != "" {
+		return alignment, reason
+	}
+
+	// Check for supporting patterns
+	if cat.hasSupportingPatterns(adrContentLower) {
+		return "supports", "ADR provides relevant guidance for this decision"
+	}
+
+	return "related", "ADR discusses related architectural concerns"
+}
+
+func (cat *CheckADRAlignmentTool) checkForConflicts(adrContentLower, status string) (string, string) {
 	conflictKeywords := []string{"deprecated", "superseded", "rejected", "obsolete"}
 	for _, keyword := range conflictKeywords {
 		if strings.Contains(adrContentLower, keyword) && status != "accepted" {
@@ -312,64 +347,78 @@ func (cat *CheckADRAlignmentTool) determineAlignment(adrContent, decisionLower s
 		}
 	}
 
-	// Check for explicit conflict patterns
 	if status == "superseded" || status == "deprecated" {
 		return "conflicts", "ADR has been superseded or deprecated"
 	}
 
-	// Check for supporting patterns
+	return "", ""
+}
+
+func (cat *CheckADRAlignmentTool) checkOpposingPatterns(adrContentLower string, keywords []string) (string, string) {
+	opposingKeywords := []string{"avoid", "do not", "should not", "must not", "anti-pattern"}
+
+	for _, keyword := range opposingKeywords {
+		if !strings.Contains(adrContentLower, keyword) {
+			continue
+		}
+
+		if cat.hasNearbyOpposingKeywords(adrContentLower, keywords, opposingKeywords) {
+			return "conflicts", "ADR recommends avoiding this approach"
+		}
+	}
+
+	return "", ""
+}
+
+func (cat *CheckADRAlignmentTool) hasNearbyOpposingKeywords(adrContentLower string, keywords, opposingKeywords []string) bool {
+	for _, decisionKeyword := range keywords {
+		keywordPos := strings.Index(adrContentLower, decisionKeyword)
+		if keywordPos == -1 {
+			continue
+		}
+
+		for _, opposing := range opposingKeywords {
+			opposingPos := strings.Index(adrContentLower, opposing)
+			if opposingPos != -1 && abs(keywordPos-opposingPos) < 100 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (cat *CheckADRAlignmentTool) checkDecisionAlignment(adrContent, status string, keywords []string) (string, string) {
+	decisionSection := cat.extractSection(adrContent, "## Decision")
+	if decisionSection == "" {
+		return "", ""
+	}
+
+	decisionSectionLower := strings.ToLower(decisionSection)
+	matchCount := 0
+	for _, keyword := range keywords {
+		if strings.Contains(decisionSectionLower, keyword) {
+			matchCount++
+		}
+	}
+
+	if matchCount >= len(keywords)/2 && len(keywords) > 0 {
+		if status == "accepted" {
+			return "supports", "ADR decision aligns with proposed approach"
+		}
+		return "related", "ADR addresses similar concerns"
+	}
+
+	return "", ""
+}
+
+func (cat *CheckADRAlignmentTool) hasSupportingPatterns(adrContentLower string) bool {
 	supportKeywords := []string{"recommend", "should use", "best practice", "guideline"}
-	supportCount := 0
 	for _, keyword := range supportKeywords {
 		if strings.Contains(adrContentLower, keyword) {
-			supportCount++
+			return true
 		}
 	}
-
-	// Check for decision alignment
-	decisionSection := cat.extractSection(adrContent, "## Decision")
-	if decisionSection != "" {
-		decisionSectionLower := strings.ToLower(decisionSection)
-		matchCount := 0
-		for _, keyword := range keywords {
-			if strings.Contains(decisionSectionLower, keyword) {
-				matchCount++
-			}
-		}
-
-		if matchCount >= len(keywords)/2 && len(keywords) > 0 {
-			if status == "accepted" {
-				return "supports", "ADR decision aligns with proposed approach"
-			}
-			return "related", "ADR addresses similar concerns"
-		}
-	}
-
-	// Check for opposing patterns
-	opposingKeywords := []string{"avoid", "do not", "should not", "must not", "anti-pattern"}
-	for _, keyword := range opposingKeywords {
-		if strings.Contains(adrContentLower, keyword) {
-			// Check if any of our decision keywords appear near opposing keywords
-			for _, decisionKeyword := range keywords {
-				keywordPos := strings.Index(adrContentLower, decisionKeyword)
-				if keywordPos != -1 {
-					for _, opposing := range opposingKeywords {
-						opposingPos := strings.Index(adrContentLower, opposing)
-						if opposingPos != -1 && abs(keywordPos-opposingPos) < 100 {
-							return "conflicts", "ADR recommends avoiding this approach"
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Default to related if we have keyword matches
-	if supportCount > 0 {
-		return "supports", "ADR provides relevant guidance for this decision"
-	}
-
-	return "related", "ADR discusses related architectural concerns"
+	return false
 }
 
 // extractSection extracts content from a markdown section

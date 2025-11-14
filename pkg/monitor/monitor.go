@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"path/filepath"
+	"sync"
 	"time"
 
 	"mcp-architecture-service/internal/models"
@@ -13,10 +14,12 @@ import (
 
 // FileSystemMonitor monitors file system changes in documentation directories
 type FileSystemMonitor struct {
-	watcher       *fsnotify.Watcher
-	debounceDelay time.Duration
-	callbacks     []func(models.FileEvent)
-	logger        *logging.StructuredLogger
+	watcher        *fsnotify.Watcher
+	debounceDelay  time.Duration
+	callbacks      []func(models.FileEvent)
+	logger         *logging.StructuredLogger
+	debounceTimers map[string]*time.Timer
+	mu             sync.Mutex
 }
 
 // NewFileSystemMonitor creates a new file system monitor
@@ -32,10 +35,11 @@ func NewFileSystemMonitor() (*FileSystemMonitor, error) {
 	logger := loggingManager.GetLogger("file_monitor")
 
 	return &FileSystemMonitor{
-		watcher:       watcher,
-		debounceDelay: 500 * time.Millisecond, // 500ms debounce
-		callbacks:     make([]func(models.FileEvent), 0),
-		logger:        logger,
+		watcher:        watcher,
+		debounceDelay:  500 * time.Millisecond, // 500ms debounce
+		callbacks:      make([]func(models.FileEvent), 0),
+		logger:         logger,
+		debounceTimers: make(map[string]*time.Timer),
 	}, nil
 }
 
@@ -68,8 +72,6 @@ func (fsm *FileSystemMonitor) StopWatching() error {
 
 // monitorEvents processes file system events with debouncing
 func (fsm *FileSystemMonitor) monitorEvents() {
-	debounceTimer := make(map[string]*time.Timer)
-
 	for {
 		select {
 		case event, ok := <-fsm.watcher.Events:
@@ -83,14 +85,18 @@ func (fsm *FileSystemMonitor) monitorEvents() {
 			}
 
 			// Debounce events for the same file
-			if timer, exists := debounceTimer[event.Name]; exists {
+			fsm.mu.Lock()
+			if timer, exists := fsm.debounceTimers[event.Name]; exists {
 				timer.Stop()
 			}
 
-			debounceTimer[event.Name] = time.AfterFunc(fsm.debounceDelay, func() {
+			fsm.debounceTimers[event.Name] = time.AfterFunc(fsm.debounceDelay, func() {
 				fsm.processEvent(event)
-				delete(debounceTimer, event.Name)
+				fsm.mu.Lock()
+				delete(fsm.debounceTimers, event.Name)
+				fsm.mu.Unlock()
 			})
+			fsm.mu.Unlock()
 
 		case err, ok := <-fsm.watcher.Errors:
 			if !ok {

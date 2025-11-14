@@ -213,89 +213,106 @@ func (te *ToolExecutor) validateField(fieldName string, value interface{}, schem
 		return nil
 	}
 
-	// Validate string fields
-	if fieldType, _ := schemaMap["type"].(string); fieldType == "string" {
-		strValue, ok := value.(string)
-		if !ok {
+	fieldType, _ := schemaMap["type"].(string)
+
+	switch fieldType {
+	case "string":
+		return te.validateStringField(fieldName, value, schemaMap)
+	case "integer":
+		return te.validateIntegerField(fieldName, value, schemaMap)
+	}
+
+	return nil
+}
+
+func (te *ToolExecutor) validateStringField(fieldName string, value interface{}, schemaMap map[string]interface{}) error {
+	strValue, ok := value.(string)
+	if !ok {
+		return errors.NewValidationError(
+			errors.ErrCodeInvalidParams,
+			fmt.Sprintf("field %s must be a string", fieldName),
+			nil,
+		)
+	}
+
+	// Check maxLength
+	if maxLength, exists := schemaMap["maxLength"].(float64); exists {
+		if len(strValue) > int(maxLength) {
 			return errors.NewValidationError(
 				errors.ErrCodeInvalidParams,
-				fmt.Sprintf("field %s must be a string", fieldName),
+				fmt.Sprintf("field %s exceeds maximum length of %d", fieldName, int(maxLength)),
 				nil,
 			)
-		}
-
-		// Check maxLength
-		if maxLength, exists := schemaMap["maxLength"].(float64); exists {
-			if len(strValue) > int(maxLength) {
-				return errors.NewValidationError(
-					errors.ErrCodeInvalidParams,
-					fmt.Sprintf("field %s exceeds maximum length of %d", fieldName, int(maxLength)),
-					nil,
-				)
-			}
-		}
-
-		// Check enum values
-		if enumValues, exists := schemaMap["enum"].([]interface{}); exists {
-			valid := false
-			for _, enumValue := range enumValues {
-				if enumStr, ok := enumValue.(string); ok && enumStr == strValue {
-					valid = true
-					break
-				}
-			}
-			if !valid {
-				return errors.NewValidationError(
-					errors.ErrCodeInvalidParams,
-					fmt.Sprintf("field %s has invalid value, must be one of allowed values", fieldName),
-					nil,
-				)
-			}
 		}
 	}
 
-	// Validate integer fields
-	if fieldType, _ := schemaMap["type"].(string); fieldType == "integer" {
-		var intValue int64
-		switch v := value.(type) {
-		case int:
-			intValue = int64(v)
-		case int64:
-			intValue = v
-		case float64:
-			intValue = int64(v)
-		default:
+	// Check enum values
+	if enumValues, exists := schemaMap["enum"].([]interface{}); exists {
+		return te.validateEnumValue(fieldName, strValue, enumValues)
+	}
+
+	return nil
+}
+
+func (te *ToolExecutor) validateEnumValue(fieldName, strValue string, enumValues []interface{}) error {
+	for _, enumValue := range enumValues {
+		if enumStr, ok := enumValue.(string); ok && enumStr == strValue {
+			return nil
+		}
+	}
+	return errors.NewValidationError(
+		errors.ErrCodeInvalidParams,
+		fmt.Sprintf("field %s has invalid value, must be one of allowed values", fieldName),
+		nil,
+	)
+}
+
+func (te *ToolExecutor) validateIntegerField(fieldName string, value interface{}, schemaMap map[string]interface{}) error {
+	intValue, err := te.convertToInt64(value)
+	if err != nil {
+		return errors.NewValidationError(
+			errors.ErrCodeInvalidParams,
+			fmt.Sprintf("field %s must be an integer", fieldName),
+			nil,
+		)
+	}
+
+	// Check minimum
+	if minimum, exists := schemaMap["minimum"].(float64); exists {
+		if intValue < int64(minimum) {
 			return errors.NewValidationError(
 				errors.ErrCodeInvalidParams,
-				fmt.Sprintf("field %s must be an integer", fieldName),
+				fmt.Sprintf("field %s must be at least %d", fieldName, int64(minimum)),
 				nil,
 			)
 		}
+	}
 
-		// Check minimum
-		if minimum, exists := schemaMap["minimum"].(float64); exists {
-			if intValue < int64(minimum) {
-				return errors.NewValidationError(
-					errors.ErrCodeInvalidParams,
-					fmt.Sprintf("field %s must be at least %d", fieldName, int64(minimum)),
-					nil,
-				)
-			}
-		}
-
-		// Check maximum
-		if maximum, exists := schemaMap["maximum"].(float64); exists {
-			if intValue > int64(maximum) {
-				return errors.NewValidationError(
-					errors.ErrCodeInvalidParams,
-					fmt.Sprintf("field %s must be at most %d", fieldName, int64(maximum)),
-					nil,
-				)
-			}
+	// Check maximum
+	if maximum, exists := schemaMap["maximum"].(float64); exists {
+		if intValue > int64(maximum) {
+			return errors.NewValidationError(
+				errors.ErrCodeInvalidParams,
+				fmt.Sprintf("field %s must be at most %d", fieldName, int64(maximum)),
+				nil,
+			)
 		}
 	}
 
 	return nil
+}
+
+func (te *ToolExecutor) convertToInt64(value interface{}) (int64, error) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case float64:
+		return int64(v), nil
+	default:
+		return 0, fmt.Errorf("not an integer")
+	}
 }
 
 // ValidateResourcePath validates that a path is within the allowed mcp/resources/ directory.

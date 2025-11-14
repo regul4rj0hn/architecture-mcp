@@ -100,17 +100,21 @@ func (dc *DocumentCache) performMemoryCleanup() {
 // Get retrieves a document from the cache by key (path)
 func (dc *DocumentCache) Get(key string) (*models.Document, error) {
 	dc.mutex.RLock()
-	defer dc.mutex.RUnlock()
-
 	document, exists := dc.documents[key]
+	dc.mutex.RUnlock()
+
 	if !exists {
+		dc.mutex.Lock()
 		dc.stats.Misses++
+		dc.mutex.Unlock()
 		return nil, errors.NewCacheError(errors.ErrCodeCacheMiss,
 			"Document not found in cache", nil).
 			WithContext("key", key)
 	}
 
+	dc.mutex.Lock()
 	dc.stats.Hits++
+	dc.mutex.Unlock()
 	return document, nil
 }
 

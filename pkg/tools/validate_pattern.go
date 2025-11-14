@@ -295,59 +295,84 @@ func (vpt *ValidatePatternTool) checkRule(code string, rule validationRule, _lan
 	codeLower := strings.ToLower(code)
 
 	// Check for required keywords
-	if len(rule.keywords) > 0 {
-		hasKeyword := false
-		for _, keyword := range rule.keywords {
-			keywordLower := strings.ToLower(keyword)
-			if strings.Contains(codeLower, keywordLower) {
-				hasKeyword = true
-				break
-			}
-		}
-
-		// For implementation rules, missing keywords indicate violation
-		if rule.name == "Interface Definition" || rule.name == "Concrete Implementation" {
-			if !hasKeyword {
-				return map[string]interface{}{
-					"rule":        rule.name,
-					"description": rule.description,
-					"severity":    rule.severity,
-				}
-			}
-		}
+	if violation := vpt.checkRequiredKeywords(codeLower, rule); violation != nil {
+		return violation
 	}
 
 	// Check for anti-patterns based on rule name
-	if strings.Contains(strings.ToLower(rule.name), "anemic") {
-		// Check if code has only CRUD methods
-		hasCRUD := strings.Contains(codeLower, "create") ||
-			strings.Contains(codeLower, "read") ||
-			strings.Contains(codeLower, "update") ||
-			strings.Contains(codeLower, "delete")
+	if violation := vpt.checkAnemicPattern(codeLower, rule); violation != nil {
+		return violation
+	}
 
-		hasDomainLogic := strings.Contains(codeLower, "validate") ||
-			strings.Contains(codeLower, "calculate") ||
-			strings.Contains(codeLower, "process")
+	if violation := vpt.checkLeakyAbstraction(codeLower, rule); violation != nil {
+		return violation
+	}
 
-		if hasCRUD && !hasDomainLogic {
-			return map[string]interface{}{
-				"rule":        rule.name,
-				"description": "Code appears to contain only CRUD operations without domain-specific logic",
-				"severity":    rule.severity,
-			}
+	return nil
+}
+
+func (vpt *ValidatePatternTool) checkRequiredKeywords(codeLower string, rule validationRule) map[string]interface{} {
+	if len(rule.keywords) == 0 {
+		return nil
+	}
+
+	hasKeyword := false
+	for _, keyword := range rule.keywords {
+		if strings.Contains(codeLower, strings.ToLower(keyword)) {
+			hasKeyword = true
+			break
 		}
 	}
 
-	if strings.Contains(strings.ToLower(rule.name), "leaky") {
-		// Check for data source-specific types
-		leakyKeywords := []string{"sql.", "*sql.", "database/sql", "mongo.", "redis."}
-		for _, keyword := range leakyKeywords {
-			if strings.Contains(codeLower, keyword) {
-				return map[string]interface{}{
-					"rule":        rule.name,
-					"description": "Code may expose data source implementation details",
-					"severity":    rule.severity,
-				}
+	// For implementation rules, missing keywords indicate violation
+	if (rule.name == "Interface Definition" || rule.name == "Concrete Implementation") && !hasKeyword {
+		return map[string]interface{}{
+			"rule":        rule.name,
+			"description": rule.description,
+			"severity":    rule.severity,
+		}
+	}
+
+	return nil
+}
+
+func (vpt *ValidatePatternTool) checkAnemicPattern(codeLower string, rule validationRule) map[string]interface{} {
+	if !strings.Contains(strings.ToLower(rule.name), "anemic") {
+		return nil
+	}
+
+	hasCRUD := strings.Contains(codeLower, "create") ||
+		strings.Contains(codeLower, "read") ||
+		strings.Contains(codeLower, "update") ||
+		strings.Contains(codeLower, "delete")
+
+	hasDomainLogic := strings.Contains(codeLower, "validate") ||
+		strings.Contains(codeLower, "calculate") ||
+		strings.Contains(codeLower, "process")
+
+	if hasCRUD && !hasDomainLogic {
+		return map[string]interface{}{
+			"rule":        rule.name,
+			"description": "Code appears to contain only CRUD operations without domain-specific logic",
+			"severity":    rule.severity,
+		}
+	}
+
+	return nil
+}
+
+func (vpt *ValidatePatternTool) checkLeakyAbstraction(codeLower string, rule validationRule) map[string]interface{} {
+	if !strings.Contains(strings.ToLower(rule.name), "leaky") {
+		return nil
+	}
+
+	leakyKeywords := []string{"sql.", "*sql.", "database/sql", "mongo.", "redis."}
+	for _, keyword := range leakyKeywords {
+		if strings.Contains(codeLower, keyword) {
+			return map[string]interface{}{
+				"rule":        rule.name,
+				"description": "Code may expose data source implementation details",
+				"severity":    rule.severity,
 			}
 		}
 	}

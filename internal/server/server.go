@@ -287,63 +287,16 @@ func (s *MCPServer) HandleMessage(message *models.MCPMessage) *models.MCPMessage
 // handleMessage processes individual MCP messages
 func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage {
 	startTime := time.Now()
-	var response *models.MCPMessage
 	var success bool = true
 	var errorMsg string
 
-	// Log incoming message
-	s.loggingManager.GetLogger("mcp_protocol").
-		WithContext("direction", "Client -> Server").
-		WithContext("mcp_method", message.Method).
-		WithContext("request_id", message.ID).
-		Info("Client -> Server: " + message.Method)
+	s.logIncomingMessage(message)
 
 	defer func() {
-		duration := time.Since(startTime)
-		mcpLogger := s.loggingManager.GetLogger("mcp_protocol").
-			WithContext("direction", "Server -> Client").
-			WithContext("mcp_method", message.Method).
-			WithContext("request_id", message.ID).
-			WithContext("duration_ms", duration.Milliseconds()).
-			WithContext("success", success)
-
-		if !success && errorMsg != "" {
-			mcpLogger = mcpLogger.WithContext("error_message", errorMsg)
-		}
-
-		if success {
-			mcpLogger.Info("MCP message processed successfully")
-		} else {
-			mcpLogger.Warn("MCP message processing failed")
-		}
+		s.logOutgoingMessage(message, startTime, success, errorMsg)
 	}()
 
-	switch message.Method {
-	case "initialize":
-		response = s.handleInitialize(message)
-	case "notifications/initialized":
-		response = s.handleInitialized(message)
-	case "resources/list":
-		response = s.handleResourcesList(message)
-	case "resources/read":
-		response = s.handleResourcesRead(message)
-	case "prompts/list":
-		response = s.handlePromptsList(message)
-	case "prompts/get":
-		response = s.handlePromptsGet(message)
-	case "tools/list":
-		response = s.handleToolsList(message)
-	case "tools/call":
-		response = s.handleToolsCall(message)
-	case "completion/complete":
-		response = s.handleCompletionComplete(message)
-	case "server/performance":
-		response = s.handlePerformanceMetrics(message)
-	default:
-		success = false
-		errorMsg = "Method not found"
-		response = s.createErrorResponse(message.ID, -32601, "Method not found")
-	}
+	response := s.routeMessage(message)
 
 	// Check if response contains an error
 	if response != nil && response.Error != nil {
@@ -352,6 +305,61 @@ func (s *MCPServer) handleMessage(message *models.MCPMessage) *models.MCPMessage
 	}
 
 	return response
+}
+
+func (s *MCPServer) logIncomingMessage(message *models.MCPMessage) {
+	s.loggingManager.GetLogger("mcp_protocol").
+		WithContext("direction", "Client -> Server").
+		WithContext("mcp_method", message.Method).
+		WithContext("request_id", message.ID).
+		Info("Client -> Server: " + message.Method)
+}
+
+func (s *MCPServer) logOutgoingMessage(message *models.MCPMessage, startTime time.Time, success bool, errorMsg string) {
+	duration := time.Since(startTime)
+	mcpLogger := s.loggingManager.GetLogger("mcp_protocol").
+		WithContext("direction", "Server -> Client").
+		WithContext("mcp_method", message.Method).
+		WithContext("request_id", message.ID).
+		WithContext("duration_ms", duration.Milliseconds()).
+		WithContext("success", success)
+
+	if !success && errorMsg != "" {
+		mcpLogger = mcpLogger.WithContext("error_message", errorMsg)
+	}
+
+	if success {
+		mcpLogger.Info("MCP message processed successfully")
+	} else {
+		mcpLogger.Warn("MCP message processing failed")
+	}
+}
+
+func (s *MCPServer) routeMessage(message *models.MCPMessage) *models.MCPMessage {
+	switch message.Method {
+	case "initialize":
+		return s.handleInitialize(message)
+	case "notifications/initialized":
+		return s.handleInitialized(message)
+	case "resources/list":
+		return s.handleResourcesList(message)
+	case "resources/read":
+		return s.handleResourcesRead(message)
+	case "prompts/list":
+		return s.handlePromptsList(message)
+	case "prompts/get":
+		return s.handlePromptsGet(message)
+	case "tools/list":
+		return s.handleToolsList(message)
+	case "tools/call":
+		return s.handleToolsCall(message)
+	case "completion/complete":
+		return s.handleCompletionComplete(message)
+	case "server/performance":
+		return s.handlePerformanceMetrics(message)
+	default:
+		return s.createErrorResponse(message.ID, -32601, "Method not found")
+	}
 }
 
 // setupCircuitBreakerCallbacks sets up callbacks for circuit breaker state changes

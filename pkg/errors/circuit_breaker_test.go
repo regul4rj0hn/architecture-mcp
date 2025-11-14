@@ -2,6 +2,7 @@ package errors
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -228,13 +229,16 @@ func TestCircuitBreakerStateChangeCallback(t *testing.T) {
 		}
 		cb := NewCircuitBreaker(config)
 
+		var mu sync.Mutex
 		var callbackCalled bool
 		var fromState, toState CircuitBreakerState
 
 		cb.SetStateChangeCallback(func(from, to CircuitBreakerState) {
+			mu.Lock()
 			callbackCalled = true
 			fromState = from
 			toState = to
+			mu.Unlock()
 		})
 
 		// Open the circuit
@@ -247,14 +251,20 @@ func TestCircuitBreakerStateChangeCallback(t *testing.T) {
 		// Give callback time to execute (it runs in goroutine)
 		time.Sleep(10 * time.Millisecond)
 
-		if !callbackCalled {
+		mu.Lock()
+		called := callbackCalled
+		from := fromState
+		to := toState
+		mu.Unlock()
+
+		if !called {
 			t.Errorf("Expected state change callback to be called")
 		}
-		if fromState != CircuitBreakerClosed {
-			t.Errorf("Expected from state to be CLOSED, got %s", fromState)
+		if from != CircuitBreakerClosed {
+			t.Errorf("Expected from state to be CLOSED, got %s", from)
 		}
-		if toState != CircuitBreakerOpen {
-			t.Errorf("Expected to state to be OPEN, got %s", toState)
+		if to != CircuitBreakerOpen {
+			t.Errorf("Expected to state to be OPEN, got %s", to)
 		}
 	})
 }
