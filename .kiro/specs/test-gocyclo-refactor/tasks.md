@@ -106,14 +106,14 @@
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 9. Refactor internal/server/integration_test.go - Part 1
-  - [ ] 9.1 Extract common setup helpers
+- [x] 9. Refactor internal/server/integration_test.go - Part 1
+  - [x] 9.1 Extract common setup helpers
     - Create setupTestDirectories function for directory creation
     - Create setupTestDocuments function for test document creation
     - Create setupContentTestDocuments function for content test documents
     - Create setupDocumentationDirectories function for documentation system setup
     - _Requirements: 2.1, 2.4_
-  - [ ] 9.2 Create common validation helpers
+  - [x] 9.2 Create common validation helpers
     - Create validateResourceListResponse for list response validation
     - Create validateResourceReadResponse for read response validation
     - Create validateResourceContent for content validation
@@ -122,61 +122,61 @@
     - Create validateFileEvent for file event validation
     - _Requirements: 2.1, 2.4_
 
-- [ ] 10. Refactor internal/server/integration_test.go - Part 2
-  - [ ] 10.1 Refactor TestDocumentationSystemIntegration
+- [x] 10. Refactor internal/server/integration_test.go - Part 2
+  - [x] 10.1 Refactor TestDocumentationSystemIntegration
     - Extract file modification testing into testFileModification helper
     - Extract file deletion testing into testFileDeletion helper
     - Use setupDocumentationDirectories and validateCacheState helpers
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.4_
-  - [ ] 10.2 Verify TestDocumentationSystemIntegration complexity is below 15
+  - [x] 10.2 Verify TestDocumentationSystemIntegration complexity is below 15
     - Run go test for the specific test
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 11. Refactor internal/server/integration_test.go - Part 3
-  - [ ] 11.1 Convert TestMCPResourceErrorScenariosIntegration to table-driven test
+- [x] 11. Refactor internal/server/integration_test.go - Part 3
+  - [x] 11.1 Convert TestMCPResourceErrorScenariosIntegration to table-driven test
     - Define error scenario test cases in a table
     - Create testErrorScenario helper function
     - Iterate through scenarios using t.Run
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.5_
-  - [ ] 11.2 Verify TestMCPResourceErrorScenariosIntegration complexity is below 15
+  - [x] 11.2 Verify TestMCPResourceErrorScenariosIntegration complexity is below 15
     - Run go test for the specific test
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 12. Refactor internal/server/integration_test.go - Part 4
-  - [ ] 12.1 Refactor TestResourceContentRetrievalIntegration
+- [x] 12. Refactor internal/server/integration_test.go - Part 4
+  - [x] 12.1 Refactor TestResourceContentRetrievalIntegration
     - Use setupContentTestDocuments helper
     - Create validateContentText helper for content verification
     - Simplify test logic using extracted helpers
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.3_
-  - [ ] 12.2 Verify TestResourceContentRetrievalIntegration complexity is below 15
+  - [x] 12.2 Verify TestResourceContentRetrievalIntegration complexity is below 15
     - Run go test for the specific test
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 13. Refactor internal/server/integration_test.go - Part 5
-  - [ ] 13.1 Split TestMCPProtocolComplianceIntegration into separate test functions
+- [x] 13. Refactor internal/server/integration_test.go - Part 5
+  - [x] 13.1 Split TestMCPProtocolComplianceIntegration into separate test functions
     - Create TestJSONRPCCompliance for JSON-RPC 2.0 compliance testing
     - Create TestMCPResourceStructureCompliance for resource structure testing
     - Create TestMCPResourceContentCompliance for content structure testing
     - Create TestErrorResponseCompliance for error response testing
     - Use validateJSONRPCResponse helper
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.2_
-  - [ ] 13.2 Verify all split test functions have complexity below 15
+  - [x] 13.2 Verify all split test functions have complexity below 15
     - Run go test for the specific tests
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_
 
-- [ ] 14. Refactor internal/server/integration_test.go - Part 6
-  - [ ] 14.1 Split TestMCPResourceMethodsIntegration into separate test functions
+- [x] 14. Refactor internal/server/integration_test.go - Part 6
+  - [x] 14.1 Split TestMCPResourceMethodsIntegration into separate test functions
     - Keep existing TestResourcesListIntegration sub-test as separate function
     - Keep existing TestResourcesReadGuidelinesIntegration sub-test as separate function
     - Keep existing TestResourcesReadPatternsIntegration sub-test as separate function
     - Keep existing TestResourcesReadADRIntegration sub-test as separate function
     - Use setupTestDirectories, setupTestDocuments, and validation helpers
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1_
-  - [ ] 14.2 Verify all split test functions have complexity below 15
+  - [x] 14.2 Verify all split test functions have complexity below 15
     - Run go test for the specific tests
     - Run gocyclo to verify complexity reduction
     - _Requirements: 5.1, 5.3_

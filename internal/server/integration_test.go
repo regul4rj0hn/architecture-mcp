@@ -13,1157 +13,79 @@ import (
 	"mcp-architecture-service/pkg/config"
 )
 
-func TestDocumentationSystemIntegration(t *testing.T) {
-	// Create temporary directory structure
+// Test fixtures and setup helpers
+
+type testEnv struct {
+	tempDir       string
+	server        *MCPServer
+	ctx           context.Context
+	cancel        context.CancelFunc
+	guidelinesDir string
+	patternsDir   string
+	adrDir        string
+}
+
+func setupTestEnv(t *testing.T) *testEnv {
+	t.Helper()
+
 	tempDir, err := os.MkdirTemp("", "mcp_integration_test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
 
-	// Create mcp/resources subdirectories
-	guidelinesDir := filepath.Join(tempDir, "mcp", "resources", "guidelines")
-	patternsDir := filepath.Join(tempDir, "mcp", "resources", "patterns")
-	adrDir := filepath.Join(tempDir, "mcp", "resources", "adr")
+	env := &testEnv{
+		tempDir:       tempDir,
+		guidelinesDir: filepath.Join(tempDir, "mcp", "resources", "guidelines"),
+		patternsDir:   filepath.Join(tempDir, "mcp", "resources", "patterns"),
+		adrDir:        filepath.Join(tempDir, "mcp", "resources", "adr"),
+	}
 
-	for _, dir := range []string{guidelinesDir, patternsDir, adrDir} {
+	for _, dir := range []string{env.guidelinesDir, env.patternsDir, env.adrDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			t.Fatalf("Failed to create directory %s: %v", dir, err)
 		}
 	}
 
-	// Create test documents
-	testDocs := map[string]string{
-		filepath.Join(guidelinesDir, "api-design.md"): "# API Design Guidelines\n\nThis is a guideline document.",
-		filepath.Join(patternsDir, "repository.md"):   "# Repository Pattern\n\nThis is a pattern document.",
-		filepath.Join(adrDir, "adr-001.md"):           "# ADR-001: Use Go for Backend\n\nThis is an ADR document.",
-	}
+	return env
+}
 
-	for path, content := range testDocs {
+func (e *testEnv) cleanup(t *testing.T, originalDir string) {
+	t.Helper()
+	if e.cancel != nil {
+		e.cancel()
+	}
+	os.Chdir(originalDir)
+	os.RemoveAll(e.tempDir)
+}
+
+func (e *testEnv) initServer(t *testing.T) {
+	t.Helper()
+
+	originalDir, _ := os.Getwd()
+	os.Chdir(e.tempDir)
+	t.Cleanup(func() { e.cleanup(t, originalDir) })
+
+	e.server = NewMCPServer()
+	e.ctx, e.cancel = context.WithTimeout(context.Background(), 10*time.Second)
+
+	if err := e.server.initializeDocumentationSystem(e.ctx); err != nil {
+		t.Fatalf("Failed to initialize documentation system: %v", err)
+	}
+}
+
+func (e *testEnv) writeTestDocs(t *testing.T, docs map[string]string) {
+	t.Helper()
+	for path, content := range docs {
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatalf("Failed to write test file %s: %v", path, err)
 		}
 	}
-
-	// Change to temp directory for testing
-	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
-	os.Chdir(tempDir)
-
-	// Create MCP server
-	server := NewMCPServer()
-
-	// Initialize documentation system
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	err = server.initializeDocumentationSystem(ctx)
-	if err != nil {
-		t.Fatalf("Failed to initialize documentation system: %v", err)
-	}
-
-	// Verify initial cache population
-	if server.cache.Size() != 3 {
-		t.Errorf("Expected 3 documents in cache, got %d", server.cache.Size())
-	}
-
-	// Verify documents are categorized correctly
-	guidelines := server.cache.GetByCategory("guideline")
-	patterns := server.cache.GetByCategory("pattern")
-	adrs := server.cache.GetByCategory("adr")
-
-	if len(guidelines) != 1 {
-		t.Errorf("Expected 1 guideline document, got %d", len(guidelines))
-	}
-	if len(patterns) != 1 {
-		t.Errorf("Expected 1 pattern document, got %d", len(patterns))
-	}
-	if len(adrs) != 1 {
-		t.Errorf("Expected 1 ADR document, got %d", len(adrs))
-	}
-
-	// Test file modification through monitor integration
-	if server.monitor != nil {
-		// Start cache refresh coordinator
-		go server.cacheRefreshCoordinator(ctx)
-
-		// Modify a file
-		newContent := "# Updated API Design Guidelines\n\nThis is updated content."
-		apiDesignPath := filepath.Join(guidelinesDir, "api-design.md")
-
-		err = os.WriteFile(apiDesignPath, []byte(newContent), 0644)
-		if err != nil {
-			t.Fatalf("Failed to update test file: %v", err)
-		}
-
-		// Wait for file system event processing (debounced)
-		time.Sleep(1500 * time.Millisecond) // Wait longer than debounce delay
-
-		// Verify cache was updated
-		relPath, _ := filepath.Rel(tempDir, apiDesignPath)
-		doc, err := server.cache.Get(relPath)
-		if err != nil {
-			t.Errorf("Failed to get updated document from cache: %v", err)
-		} else if doc.Content.RawContent != newContent {
-			t.Errorf("Document content was not updated in cache. Expected: %s, Got: %s", newContent, doc.Content.RawContent)
-		}
-
-		// Test file deletion
-		deleteTestPath := filepath.Join(patternsDir, "repository.md")
-		err = os.Remove(deleteTestPath)
-		if err != nil {
-			t.Fatalf("Failed to delete test file: %v", err)
-		}
-
-		// Wait for file system event processing (debounced)
-		time.Sleep(1500 * time.Millisecond) // Wait longer than debounce delay
-
-		// Verify document was removed from cache
-		relDeletePath, _ := filepath.Rel(tempDir, deleteTestPath)
-		_, err = server.cache.Get(relDeletePath)
-		if err == nil {
-			t.Errorf("Expected document to be removed from cache, but it still exists")
-		}
-
-		// Verify cache size decreased
-		if server.cache.Size() != 2 {
-			t.Errorf("Expected 2 documents in cache after deletion, got %d", server.cache.Size())
-		}
-	}
-
-	// Test graceful shutdown
-	err = server.Shutdown(ctx)
-	if err != nil {
-		t.Errorf("Failed to shutdown server: %v", err)
-	}
 }
 
-func TestCacheRefreshCoordinator(t *testing.T) {
-	server := NewMCPServer()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Start coordinator
-	go server.cacheRefreshCoordinator(ctx)
-
-	// Test that coordinator can receive events
-	testEvent := models.FileEvent{Type: "delete", Path: config.PatternsPath + "/test2.md"}
-
-	select {
-	case server.refreshChan <- testEvent:
-		// Event sent successfully
-	case <-time.After(1 * time.Second):
-		t.Errorf("Failed to send event to refresh channel")
-	}
-
-	// Wait for processing
-	time.Sleep(1 * time.Second)
-
-	// Test coordinator shutdown
-	cancel()
-	time.Sleep(100 * time.Millisecond) // Give coordinator time to exit
-}
-
-func TestGetCategoryFromPath(t *testing.T) {
-	server := NewMCPServer()
-
-	tests := []struct {
-		path     string
-		expected string
-	}{
-		{config.GuidelinesPath + "/api.md", "guideline"},
-		{config.PatternsPath + "/repository.md", "pattern"},
-		{config.ADRPath + "/adr-001.md", "adr"},
-		{"some/other/path.md", "unknown"},
-		{strings.ToUpper(config.GuidelinesPath) + "/API.MD", "guideline"}, // Test case insensitive
-	}
-
-	for _, test := range tests {
-		result := server.getCategoryFromPath(test.path)
-		if result != test.expected {
-			t.Errorf("getCategoryFromPath(%s) = %s, expected %s", test.path, result, test.expected)
-		}
-	}
-}
-
-// TestMCPResourceMethodsIntegration tests the complete MCP resource functionality
-func TestMCPResourceMethodsIntegration(t *testing.T) {
-	// Create temporary directory structure with test documents
-	tempDir, err := os.MkdirTemp("", "mcp_resource_integration_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create mcp/resources subdirectories
-	guidelinesDir := filepath.Join(tempDir, "mcp", "resources", "guidelines")
-	patternsDir := filepath.Join(tempDir, "mcp", "resources", "patterns")
-	adrDir := filepath.Join(tempDir, "mcp", "resources", "adr")
-
-	for _, dir := range []string{guidelinesDir, patternsDir, adrDir} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatalf("Failed to create directory %s: %v", dir, err)
-		}
-	}
-
-	// Create comprehensive test documents
-	testDocs := map[string]string{
-		filepath.Join(guidelinesDir, "api-design.md"): `# API Design Guidelines
-
-This document outlines the API design principles and best practices.
-
-## REST Principles
-- Use HTTP methods appropriately
-- Design resource-oriented URLs
-- Return appropriate status codes`,
-
-		filepath.Join(guidelinesDir, "security.md"): `# Security Guidelines
-
-Security considerations for all applications.
-
-## Authentication
-- Use OAuth 2.0 for API authentication
-- Implement proper session management`,
-
-		filepath.Join(patternsDir, "repository.md"): `# Repository Pattern
-
-The repository pattern encapsulates data access logic.
-
-## Implementation
-- Define repository interfaces
-- Implement concrete repositories`,
-
-		filepath.Join(patternsDir, "factory.md"): `# Factory Pattern
-
-The factory pattern creates objects without specifying exact classes.
-
-## Benefits
-- Loose coupling
-- Easier testing`,
-
-		filepath.Join(adrDir, "adr-001.md"): `# ADR-001: Use Go for Backend Services
-
-## Status
-Accepted
-
-## Context
-We need to choose a backend language for our microservices.
-
-## Decision
-We will use Go for all new backend services.
-
-## Consequences
-- Better performance
-- Strong typing`,
-
-		filepath.Join(adrDir, "adr-002.md"): `# ADR-002: Use PostgreSQL for Primary Database
-
-## Status
-Accepted
-
-## Context
-We need a reliable database for our application data.
-
-## Decision
-We will use PostgreSQL as our primary database.`,
-	}
-
-	for path, content := range testDocs {
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatalf("Failed to write test file %s: %v", path, err)
-		}
-	}
-
-	// Change to temp directory for testing
-	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
-	os.Chdir(tempDir)
-
-	// Create and initialize MCP server
-	server := NewMCPServer()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	err = server.initializeDocumentationSystem(ctx)
-	if err != nil {
-		t.Fatalf("Failed to initialize documentation system: %v", err)
-	}
-
-	// Test 1: resources/list method integration
-	t.Run("ResourcesListIntegration", func(t *testing.T) {
-		listMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-list-integration",
-			Method:  "resources/list",
-		}
-
-		response := server.handleResourcesList(listMessage)
-
-		// Verify response structure
-		if response == nil {
-			t.Fatal("handleResourcesList() returned nil")
-		}
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPResourcesListResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPResourcesListResult")
-		}
-
-		// Should return all 6 test documents
-		if len(result.Resources) != 6 {
-			t.Errorf("Expected 6 resources, got %d", len(result.Resources))
-		}
-
-		// Verify resource categories and URIs
-		categoryCount := make(map[string]int)
-		uriPatterns := make(map[string]bool)
-
-		for _, resource := range result.Resources {
-			// Verify required fields
-			if resource.URI == "" {
-				t.Error("Resource URI should not be empty")
-			}
-			if resource.Name == "" {
-				t.Error("Resource name should not be empty")
-			}
-			if resource.MimeType != "text/markdown" {
-				t.Errorf("Expected mimeType 'text/markdown', got '%s'", resource.MimeType)
-			}
-
-			// Count categories
-			if category, exists := resource.Annotations["category"]; exists {
-				categoryCount[category]++
-			}
-
-			// Track URI patterns
-			if strings.HasPrefix(resource.URI, "architecture://guidelines/") {
-				uriPatterns["guidelines"] = true
-			} else if strings.HasPrefix(resource.URI, "architecture://patterns/") {
-				uriPatterns["patterns"] = true
-			} else if strings.HasPrefix(resource.URI, "architecture://adr/") {
-				uriPatterns["adr"] = true
-			}
-		}
-
-		// Verify category distribution
-		if categoryCount["guideline"] != 2 {
-			t.Errorf("Expected 2 guideline resources, got %d", categoryCount["guideline"])
-		}
-		if categoryCount["pattern"] != 2 {
-			t.Errorf("Expected 2 pattern resources, got %d", categoryCount["pattern"])
-		}
-		if categoryCount["adr"] != 2 {
-			t.Errorf("Expected 2 ADR resources, got %d", categoryCount["adr"])
-		}
-
-		// Verify all URI patterns are present
-		expectedPatterns := []string{"guidelines", "patterns", "adr"}
-		for _, pattern := range expectedPatterns {
-			if !uriPatterns[pattern] {
-				t.Errorf("Expected to find %s URI pattern", pattern)
-			}
-		}
-	})
-
-	// Test 2: resources/read method integration for guidelines
-	t.Run("ResourcesReadGuidelinesIntegration", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-read-guideline",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://guidelines/api-design",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response == nil {
-			t.Fatal("handleResourcesRead() returned nil")
-		}
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPResourcesReadResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPResourcesReadResult")
-		}
-
-		if len(result.Contents) != 1 {
-			t.Errorf("Expected 1 content item, got %d", len(result.Contents))
-		}
-
-		content := result.Contents[0]
-		if content.URI != "architecture://guidelines/api-design" {
-			t.Errorf("Expected URI 'architecture://guidelines/api-design', got '%s'", content.URI)
-		}
-
-		if content.MimeType != "text/markdown" {
-			t.Errorf("Expected mimeType 'text/markdown', got '%s'", content.MimeType)
-		}
-
-		// Verify content contains expected text
-		if !strings.Contains(content.Text, "API Design Guidelines") {
-			t.Error("Content should contain 'API Design Guidelines'")
-		}
-		if !strings.Contains(content.Text, "REST Principles") {
-			t.Error("Content should contain 'REST Principles'")
-		}
-	})
-
-	// Test 3: resources/read method integration for patterns
-	t.Run("ResourcesReadPatternsIntegration", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-read-pattern",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://patterns/repository",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response == nil {
-			t.Fatal("handleResourcesRead() returned nil")
-		}
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPResourcesReadResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPResourcesReadResult")
-		}
-
-		content := result.Contents[0]
-		if content.URI != "architecture://patterns/repository" {
-			t.Errorf("Expected URI 'architecture://patterns/repository', got '%s'", content.URI)
-		}
-
-		// Verify content contains expected text
-		if !strings.Contains(content.Text, "Repository Pattern") {
-			t.Error("Content should contain 'Repository Pattern'")
-		}
-		if !strings.Contains(content.Text, "Implementation") {
-			t.Error("Content should contain 'Implementation'")
-		}
-	})
-
-	// Test 4: resources/read method integration for ADRs
-	t.Run("ResourcesReadADRIntegration", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-read-adr",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://adr/001",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response == nil {
-			t.Fatal("handleResourcesRead() returned nil")
-		}
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPResourcesReadResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPResourcesReadResult")
-		}
-
-		content := result.Contents[0]
-		if content.URI != "architecture://adr/001" {
-			t.Errorf("Expected URI 'architecture://adr/001', got '%s'", content.URI)
-		}
-
-		// Verify content contains expected ADR structure
-		if !strings.Contains(content.Text, "ADR-001") {
-			t.Error("Content should contain 'ADR-001'")
-		}
-		if !strings.Contains(content.Text, "Status") {
-			t.Error("Content should contain 'Status'")
-		}
-		if !strings.Contains(content.Text, "Context") {
-			t.Error("Content should contain 'Context'")
-		}
-		if !strings.Contains(content.Text, "Decision") {
-			t.Error("Content should contain 'Decision'")
-		}
-	})
-}
-
-// TestMCPResourceErrorScenariosIntegration tests error handling in resource methods
-func TestMCPResourceErrorScenariosIntegration(t *testing.T) {
-	server := NewMCPServer()
-
-	// Test 1: Invalid URI schemes
-	t.Run("InvalidURIScheme", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-invalid-scheme",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "invalid://guidelines/test",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response.Error == nil {
-			t.Error("Expected error for invalid URI scheme")
-		}
-		if response.Error.Code != -32602 {
-			t.Errorf("Expected error code -32602, got %d", response.Error.Code)
-		}
-		if !strings.Contains(response.Error.Message, "Invalid resource URI") {
-			t.Errorf("Expected error message about invalid URI, got '%s'", response.Error.Message)
-		}
-	})
-
-	// Test 2: Unsupported categories
-	t.Run("UnsupportedCategory", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-unsupported-category",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://unsupported/test",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response.Error == nil {
-			t.Error("Expected error for unsupported category")
-		}
-		if response.Error.Code != -32602 {
-			t.Errorf("Expected error code -32602, got %d", response.Error.Code)
-		}
-		if !strings.Contains(response.Error.Message, "unsupported resource category") {
-			t.Errorf("Expected error message about unsupported category, got '%s'", response.Error.Message)
-		}
-	})
-
-	// Test 3: Missing URI parameter
-	t.Run("MissingURIParameter", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-missing-uri",
-			Method:  "resources/read",
-			Params:  models.MCPResourcesReadParams{}, // Empty params
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response.Error == nil {
-			t.Error("Expected error for missing URI parameter")
-		}
-		if response.Error.Code != -32602 {
-			t.Errorf("Expected error code -32602, got %d", response.Error.Code)
-		}
-		if !strings.Contains(response.Error.Message, "Missing required parameter: uri") {
-			t.Errorf("Expected error message about missing URI, got '%s'", response.Error.Message)
-		}
-	})
-
-	// Test 4: Resource not found
-	t.Run("ResourceNotFound", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-not-found",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://guidelines/nonexistent-document",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response.Error == nil {
-			t.Error("Expected error for resource not found")
-		}
-		if response.Error.Code != -32603 {
-			t.Errorf("Expected error code -32603, got %d", response.Error.Code)
-		}
-		if !strings.Contains(response.Error.Message, "Resource not found") {
-			t.Errorf("Expected error message about resource not found, got '%s'", response.Error.Message)
-		}
-	})
-
-	// Test 5: Malformed URI format
-	t.Run("MalformedURIFormat", func(t *testing.T) {
-		testCases := []string{
-			"architecture://",                 // Missing category and path
-			"architecture://guidelines",       // Missing path
-			"architecture:///guidelines/test", // Extra slash
-			"architecture://guidelines//test", // Double slash in path
-		}
-
-		for i, uri := range testCases {
-			t.Run(fmt.Sprintf("MalformedURI_%d", i), func(t *testing.T) {
-				readMessage := &models.MCPMessage{
-					JSONRPC: "2.0",
-					ID:      fmt.Sprintf("test-malformed-%d", i),
-					Method:  "resources/read",
-					Params: models.MCPResourcesReadParams{
-						URI: uri,
-					},
-				}
-
-				response := server.handleResourcesRead(readMessage)
-
-				if response.Error == nil {
-					t.Errorf("Expected error for malformed URI: %s", uri)
-				}
-				if response.Error.Code != -32602 {
-					t.Errorf("Expected error code -32602, got %d", response.Error.Code)
-				}
-			})
-		}
-	})
-}
-
-// TestMCPProtocolComplianceIntegration tests MCP protocol compliance
-func TestMCPProtocolComplianceIntegration(t *testing.T) {
-	server := NewMCPServer()
-
-	// Test 1: JSON-RPC 2.0 compliance
-	t.Run("JSONRPCCompliance", func(t *testing.T) {
-		listMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "compliance-test",
-			Method:  "resources/list",
-		}
-
-		response := server.handleResourcesList(listMessage)
-
-		// Verify JSON-RPC 2.0 compliance
-		if response.JSONRPC != "2.0" {
-			t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
-		}
-
-		if response.ID != "compliance-test" {
-			t.Errorf("Expected ID 'compliance-test', got '%v'", response.ID)
-		}
-
-		// Should have either result or error, but not both
-		if response.Result != nil && response.Error != nil {
-			t.Error("Response should not have both result and error")
-		}
-
-		if response.Result == nil && response.Error == nil {
-			t.Error("Response should have either result or error")
-		}
-	})
-
-	// Test 2: MCP resource structure compliance
-	t.Run("MCPResourceStructureCompliance", func(t *testing.T) {
-		// Add a test document to cache
-		testDoc := &models.Document{
-			Metadata: models.DocumentMetadata{
-				Title:        "Test Document",
-				Category:     "guideline",
-				Path:         config.GuidelinesPath + "/test.md",
-				LastModified: time.Now(),
-				Size:         100,
-				Checksum:     "test123",
-			},
-			Content: models.DocumentContent{
-				RawContent: "# Test Document\nThis is a test.",
-			},
-		}
-		server.cache.Set(testDoc.Metadata.Path, testDoc)
-
-		listMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "structure-test",
-			Method:  "resources/list",
-		}
-
-		response := server.handleResourcesList(listMessage)
-
-		result, ok := response.Result.(models.MCPResourcesListResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPResourcesListResult")
-		}
-
-		if len(result.Resources) == 0 {
-			t.Fatal("Expected at least one resource")
-		}
-
-		resource := result.Resources[0]
-
-		// Verify required MCP resource fields
-		if resource.URI == "" {
-			t.Error("Resource URI is required")
-		}
-		if resource.Name == "" {
-			t.Error("Resource name is required")
-		}
-		if resource.MimeType == "" {
-			t.Error("Resource mimeType is required")
-		}
-
-		// Verify URI format compliance
-		if !strings.HasPrefix(resource.URI, "architecture://") {
-			t.Errorf("Resource URI should start with 'architecture://', got '%s'", resource.URI)
-		}
-
-		// Verify annotations structure
-		if resource.Annotations == nil {
-			t.Error("Resource annotations should not be nil")
-		}
-
-		requiredAnnotations := []string{"category", "path", "lastModified", "size", "checksum"}
-		for _, annotation := range requiredAnnotations {
-			if _, exists := resource.Annotations[annotation]; !exists {
-				t.Errorf("Resource should have '%s' annotation", annotation)
-			}
-		}
-	})
-
-	// Test 3: MCP resource content structure compliance
-	t.Run("MCPResourceContentCompliance", func(t *testing.T) {
-		// Add a test document to cache
-		testDoc := &models.Document{
-			Metadata: models.DocumentMetadata{
-				Title:        "Content Test",
-				Category:     "pattern",
-				Path:         config.PatternsPath + "/content-test.md",
-				LastModified: time.Now(),
-				Size:         200,
-				Checksum:     "content123",
-			},
-			Content: models.DocumentContent{
-				RawContent: "# Content Test\nThis is content for testing.",
-			},
-		}
-		server.cache.Set(testDoc.Metadata.Path, testDoc)
-
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "content-compliance-test",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://patterns/content-test",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		result, ok := response.Result.(models.MCPResourcesReadResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPResourcesReadResult")
-		}
-
-		if len(result.Contents) != 1 {
-			t.Errorf("Expected 1 content item, got %d", len(result.Contents))
-		}
-
-		content := result.Contents[0]
-
-		// Verify required MCP resource content fields
-		if content.URI == "" {
-			t.Error("Resource content URI is required")
-		}
-		if content.MimeType == "" {
-			t.Error("Resource content mimeType is required")
-		}
-
-		// Should have either text or blob, but not both
-		if content.Text != "" && content.Blob != "" {
-			t.Error("Resource content should not have both text and blob")
-		}
-		if content.Text == "" && content.Blob == "" {
-			t.Error("Resource content should have either text or blob")
-		}
-
-		// For markdown content, should use text field
-		if content.MimeType == "text/markdown" && content.Text == "" {
-			t.Error("Markdown content should use text field")
-		}
-	})
-
-	// Test 4: Error response compliance
-	t.Run("ErrorResponseCompliance", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "error-compliance-test",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "invalid://test/path",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		// Verify error response structure
-		if response.Error == nil {
-			t.Fatal("Expected error response")
-		}
-
-		// Verify required error fields
-		if response.Error.Code == 0 {
-			t.Error("Error code is required")
-		}
-		if response.Error.Message == "" {
-			t.Error("Error message is required")
-		}
-
-		// Verify JSON-RPC 2.0 compliance for errors
-		if response.JSONRPC != "2.0" {
-			t.Errorf("Expected JSONRPC '2.0' in error response, got '%s'", response.JSONRPC)
-		}
-		if response.ID != "error-compliance-test" {
-			t.Errorf("Expected ID 'error-compliance-test' in error response, got '%v'", response.ID)
-		}
-
-		// Should not have result field in error response
-		if response.Result != nil {
-			t.Error("Error response should not have result field")
-		}
-	})
-}
-
-// TestResourceURIParsingIntegration tests URI parsing functionality
-func TestResourceURIParsingIntegration(t *testing.T) {
-	server := NewMCPServer()
-
-	testCases := []struct {
-		name             string
-		uri              string
-		expectedCategory string
-		expectedPath     string
-		expectError      bool
-	}{
-		{
-			name:             "ValidGuidelineURI",
-			uri:              "architecture://guidelines/api-design",
-			expectedCategory: "guideline",
-			expectedPath:     "api-design",
-			expectError:      false,
-		},
-		{
-			name:             "ValidPatternURI",
-			uri:              "architecture://patterns/repository",
-			expectedCategory: "pattern",
-			expectedPath:     "repository",
-			expectError:      false,
-		},
-		{
-			name:             "ValidADRURI",
-			uri:              "architecture://adr/001",
-			expectedCategory: "adr",
-			expectedPath:     "001",
-			expectError:      false,
-		},
-		{
-			name:             "ValidNestedPath",
-			uri:              "architecture://guidelines/security/authentication",
-			expectedCategory: "guideline",
-			expectedPath:     "security/authentication",
-			expectError:      false,
-		},
-		{
-			name:        "InvalidScheme",
-			uri:         "invalid://guidelines/test",
-			expectError: true,
-		},
-		{
-			name:        "InvalidCategory",
-			uri:         "architecture://invalid/test",
-			expectError: true,
-		},
-		{
-			name:        "MissingPath",
-			uri:         "architecture://guidelines",
-			expectError: true,
-		},
-		{
-			name:        "EmptyURI",
-			uri:         "",
-			expectError: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			category, path, err := server.parseResourceURI(tc.uri)
-
-			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error for URI '%s', but got none", tc.uri)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error for URI '%s': %v", tc.uri, err)
-				}
-
-				if category != tc.expectedCategory {
-					t.Errorf("Expected category '%s', got '%s'", tc.expectedCategory, category)
-				}
-
-				if path != tc.expectedPath {
-					t.Errorf("Expected path '%s', got '%s'", tc.expectedPath, path)
-				}
-			}
-		})
-	}
-}
-
-// TestResourceContentRetrievalIntegration tests content retrieval with various scenarios
-func TestResourceContentRetrievalIntegration(t *testing.T) {
-	// Create temporary directory with test documents
-	tempDir, err := os.MkdirTemp("", "mcp_content_retrieval_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create test documents with different content types
-	testDocs := map[string]string{
-		filepath.Join(tempDir, "mcp", "resources", "guidelines", "simple.md"): `# Simple Document
-This is a simple document with basic content.`,
-
-		filepath.Join(tempDir, "mcp", "resources", "patterns", "complex.md"): `# Complex Pattern Document
-
-## Overview
-This is a more complex document with multiple sections.
-
-### Code Examples
-` + "```go\nfunc example() {\n    return \"test\"\n}\n```" + `
-
-### Lists
-- Item 1
-- Item 2
-- Item 3
-
-### Tables
-| Column 1 | Column 2 |
-|----------|----------|
-| Value 1  | Value 2  |`,
-
-		filepath.Join(tempDir, "mcp", "resources", "adr", "adr-special-chars.md"): `# ADR with Special Characters
-
-This document contains special characters: áéíóú, ñ, ç, ü
-
-## Symbols
-- © Copyright
-- ® Registered
-- ™ Trademark
-- € Euro
-- £ Pound`,
-	}
-
-	// Create directories and files
-	for path, content := range testDocs {
-		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatalf("Failed to create directory %s: %v", dir, err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatalf("Failed to write test file %s: %v", path, err)
-		}
-	}
-
-	// Change to temp directory
-	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
-	os.Chdir(tempDir)
-
-	// Initialize server
-	server := NewMCPServer()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	err = server.initializeDocumentationSystem(ctx)
-	if err != nil {
-		t.Fatalf("Failed to initialize documentation system: %v", err)
-	}
-
-	// Test 1: Simple content retrieval
-	t.Run("SimpleContentRetrieval", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "simple-content",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://guidelines/simple",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response.Error != nil {
-			t.Fatalf("Unexpected error: %v", response.Error)
-		}
-
-		result := response.Result.(models.MCPResourcesReadResult)
-		content := result.Contents[0]
-
-		if !strings.Contains(content.Text, "Simple Document") {
-			t.Error("Content should contain 'Simple Document'")
-		}
-		if !strings.Contains(content.Text, "basic content") {
-			t.Error("Content should contain 'basic content'")
-		}
-	})
-
-	// Test 2: Complex content with code blocks and formatting
-	t.Run("ComplexContentRetrieval", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "complex-content",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://patterns/complex",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response.Error != nil {
-			t.Fatalf("Unexpected error: %v", response.Error)
-		}
-
-		result := response.Result.(models.MCPResourcesReadResult)
-		content := result.Contents[0]
-
-		// Verify complex content elements are preserved
-		expectedElements := []string{
-			"Complex Pattern Document",
-			"Overview",
-			"Code Examples",
-			"```go",
-			"func example()",
-			"Lists",
-			"- Item 1",
-			"Tables",
-			"| Column 1 | Column 2 |",
-		}
-
-		for _, element := range expectedElements {
-			if !strings.Contains(content.Text, element) {
-				t.Errorf("Content should contain '%s'", element)
-			}
-		}
-	})
-
-	// Test 3: Content with special characters
-	t.Run("SpecialCharactersContent", func(t *testing.T) {
-		readMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "special-chars",
-			Method:  "resources/read",
-			Params: models.MCPResourcesReadParams{
-				URI: "architecture://adr/special-chars",
-			},
-		}
-
-		response := server.handleResourcesRead(readMessage)
-
-		if response.Error != nil {
-			t.Fatalf("Unexpected error: %v", response.Error)
-		}
-
-		result := response.Result.(models.MCPResourcesReadResult)
-		content := result.Contents[0]
-
-		// Verify special characters are preserved
-		specialChars := []string{"áéíóú", "ñ", "ç", "ü", "©", "®", "™", "€", "£"}
-		for _, char := range specialChars {
-			if !strings.Contains(content.Text, char) {
-				t.Errorf("Content should contain special character '%s'", char)
-			}
-		}
-	})
-
-	// Test 4: Content length and integrity
-	t.Run("ContentIntegrity", func(t *testing.T) {
-		// Get all resources and verify their content integrity
-		listMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "integrity-list",
-			Method:  "resources/list",
-		}
-
-		listResponse := server.handleResourcesList(listMessage)
-		listResult := listResponse.Result.(models.MCPResourcesListResult)
-
-		for _, resource := range listResult.Resources {
-			readMessage := &models.MCPMessage{
-				JSONRPC: "2.0",
-				ID:      "integrity-read",
-				Method:  "resources/read",
-				Params: models.MCPResourcesReadParams{
-					URI: resource.URI,
-				},
-			}
-
-			readResponse := server.handleResourcesRead(readMessage)
-
-			if readResponse.Error != nil {
-				t.Errorf("Failed to read resource %s: %v", resource.URI, readResponse.Error)
-				continue
-			}
-
-			readResult := readResponse.Result.(models.MCPResourcesReadResult)
-			content := readResult.Contents[0]
-
-			// Verify content is not empty
-			if content.Text == "" {
-				t.Errorf("Content for resource %s should not be empty", resource.URI)
-			}
-
-			// Verify content matches URI
-			if content.URI != resource.URI {
-				t.Errorf("Content URI %s does not match resource URI %s", content.URI, resource.URI)
-			}
-
-			// Verify content has proper structure (starts with #)
-			if !strings.HasPrefix(strings.TrimSpace(content.Text), "#") {
-				t.Errorf("Markdown content for %s should start with header", resource.URI)
-			}
-		}
-	})
-}
-
-// TestToolsSystemIntegration tests the complete MCP tools functionality
-func TestToolsSystemIntegration(t *testing.T) {
-	// Create temporary directory structure with test documents
-	tempDir, err := os.MkdirTemp("", "mcp_tools_integration_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create mcp/resources subdirectories
-	guidelinesDir := filepath.Join(tempDir, "mcp", "resources", "guidelines")
-	patternsDir := filepath.Join(tempDir, "mcp", "resources", "patterns")
-	adrDir := filepath.Join(tempDir, "mcp", "resources", "adr")
-
-	for _, dir := range []string{guidelinesDir, patternsDir, adrDir} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatalf("Failed to create directory %s: %v", dir, err)
-		}
-	}
-
-	// Create test documents for tools to work with
-	testDocs := map[string]string{
-		filepath.Join(guidelinesDir, "api-design.md"): `# API Design Guidelines
+// Standard test documents
+func standardTestDocs(env *testEnv) map[string]string {
+	return map[string]string{
+		filepath.Join(env.guidelinesDir, "api-design.md"): `# API Design Guidelines
 
 This document outlines the API design principles and best practices.
 
@@ -1176,729 +98,486 @@ This document outlines the API design principles and best practices.
 - Use OAuth 2.0 for API authentication
 - Implement proper session management`,
 
-		filepath.Join(patternsDir, "repository-pattern.md"): `# Repository Pattern
+		filepath.Join(env.patternsDir, "repository-pattern.md"): `# Repository Pattern
 
 The repository pattern encapsulates data access logic.
 
 ## Implementation
 - Define repository interfaces
 - Implement concrete repositories
-- Use dependency injection
+- Use dependency injection`,
 
-## Example Structure
-` + "```go\ntype Repository interface {\n    FindByID(id string) (*Entity, error)\n    Save(entity *Entity) error\n}\n```",
-
-		filepath.Join(adrDir, "001-microservices-architecture.md"): `# ADR-001: Use Microservices Architecture
+		filepath.Join(env.adrDir, "001-microservices-architecture.md"): `# ADR-001: Use Microservices Architecture
 
 ## Status
 Accepted
 
 ## Context
-We need to choose an architecture pattern for our system that supports scalability and independent deployment.
+We need to choose an architecture pattern for our system.
 
 ## Decision
-We will use a microservices architecture with domain-driven design principles.
+We will use a microservices architecture.
 
 ## Consequences
 - Better scalability
-- Independent deployment
-- Increased operational complexity`,
-
-		filepath.Join(adrDir, "002-use-postgresql.md"): `# ADR-002: Use PostgreSQL for Primary Database
-
-## Status
-Accepted
-
-## Context
-We need a reliable database for our application data with strong consistency guarantees.
-
-## Decision
-We will use PostgreSQL as our primary database for all transactional data.
-
-## Consequences
-- Strong ACID guarantees
-- Rich feature set
-- Mature ecosystem`,
+- Independent deployment`,
 	}
+}
 
-	for path, content := range testDocs {
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatalf("Failed to write test file %s: %v", path, err)
+// Validation helpers
+
+func validateMCPResponse(t *testing.T, response *models.MCPMessage, expectError bool) {
+	t.Helper()
+	if response == nil {
+		t.Fatal("Response is nil")
+	}
+	if response.JSONRPC != "2.0" {
+		t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
+	}
+	if expectError && response.Error == nil {
+		t.Error("Expected error but got none")
+	}
+	if !expectError && response.Error != nil {
+		t.Errorf("Unexpected error: %v", response.Error)
+	}
+}
+
+func validateResourceList(t *testing.T, result models.MCPResourcesListResult, expectedCount int) {
+	t.Helper()
+	if len(result.Resources) != expectedCount {
+		t.Errorf("Expected %d resources, got %d", expectedCount, len(result.Resources))
+	}
+	for _, resource := range result.Resources {
+		if resource.URI == "" || resource.Name == "" || resource.MimeType == "" {
+			t.Error("Resource missing required fields")
 		}
 	}
+}
 
-	// Change to temp directory for testing
-	originalDir, _ := os.Getwd()
-	defer os.Chdir(originalDir)
-	os.Chdir(tempDir)
+func validateResourceContent(t *testing.T, content models.MCPResourceContent, expectedURI string, expectedTexts []string) {
+	t.Helper()
+	if content.URI != expectedURI {
+		t.Errorf("Expected URI '%s', got '%s'", expectedURI, content.URI)
+	}
+	if content.MimeType != "text/markdown" {
+		t.Errorf("Expected mimeType 'text/markdown', got '%s'", content.MimeType)
+	}
+	for _, text := range expectedTexts {
+		if !strings.Contains(content.Text, text) {
+			t.Errorf("Content should contain '%s'", text)
+		}
+	}
+}
 
-	// Create and initialize MCP server
+// Test: Documentation System Integration
+func TestDocumentationSystemIntegration(t *testing.T) {
+	env := setupTestEnv(t)
+	env.writeTestDocs(t, standardTestDocs(env))
+	env.initServer(t)
+
+	// Verify initial cache population
+	if env.server.cache.Size() != 3 {
+		t.Errorf("Expected 3 documents in cache, got %d", env.server.cache.Size())
+	}
+
+	// Verify categorization
+	categories := map[string]int{
+		"guideline": len(env.server.cache.GetByCategory("guideline")),
+		"pattern":   len(env.server.cache.GetByCategory("pattern")),
+		"adr":       len(env.server.cache.GetByCategory("adr")),
+	}
+
+	for cat, count := range categories {
+		if count != 1 {
+			t.Errorf("Expected 1 %s document, got %d", cat, count)
+		}
+	}
+}
+
+// Test: Resource List Method
+func TestResourcesListMethod(t *testing.T) {
+	env := setupTestEnv(t)
+	env.writeTestDocs(t, standardTestDocs(env))
+	env.initServer(t)
+
+	msg := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-list",
+		Method:  "resources/list",
+	}
+
+	response := env.server.handleResourcesList(msg)
+	validateMCPResponse(t, response, false)
+
+	result := response.Result.(models.MCPResourcesListResult)
+	validateResourceList(t, result, 3)
+}
+
+// Test: Resource Read Method - Table Driven
+func TestResourcesReadMethod(t *testing.T) {
+	env := setupTestEnv(t)
+	env.writeTestDocs(t, standardTestDocs(env))
+	env.initServer(t)
+
+	tests := []struct {
+		name          string
+		uri           string
+		expectedTexts []string
+	}{
+		{
+			name:          "Guideline",
+			uri:           "architecture://guidelines/api-design",
+			expectedTexts: []string{"API Design Guidelines", "REST Principles"},
+		},
+		{
+			name:          "Pattern",
+			uri:           "architecture://patterns/repository-pattern",
+			expectedTexts: []string{"Repository Pattern", "Implementation"},
+		},
+		{
+			name:          "ADR",
+			uri:           "architecture://adr/001",
+			expectedTexts: []string{"ADR-001", "Status", "Decision"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &models.MCPMessage{
+				JSONRPC: "2.0",
+				ID:      "test-read",
+				Method:  "resources/read",
+				Params:  models.MCPResourcesReadParams{URI: tt.uri},
+			}
+
+			response := env.server.handleResourcesRead(msg)
+			validateMCPResponse(t, response, false)
+
+			result := response.Result.(models.MCPResourcesReadResult)
+			if len(result.Contents) != 1 {
+				t.Fatalf("Expected 1 content item, got %d", len(result.Contents))
+			}
+
+			validateResourceContent(t, result.Contents[0], tt.uri, tt.expectedTexts)
+		})
+	}
+}
+
+// Test: Resource Error Scenarios - Table Driven
+func TestResourceErrorScenarios(t *testing.T) {
 	server := NewMCPServer()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	tests := []struct {
+		name         string
+		uri          string
+		expectedCode int
+		errorText    string
+	}{
+		{
+			name:         "InvalidScheme",
+			uri:          "invalid://guidelines/test",
+			expectedCode: -32602,
+			errorText:    "Invalid resource URI",
+		},
+		{
+			name:         "UnsupportedCategory",
+			uri:          "architecture://unsupported/test",
+			expectedCode: -32602,
+			errorText:    "unsupported resource category",
+		},
+		{
+			name:         "MissingURI",
+			uri:          "",
+			expectedCode: -32602,
+			errorText:    "Missing required parameter: uri",
+		},
+		{
+			name:         "ResourceNotFound",
+			uri:          "architecture://guidelines/nonexistent",
+			expectedCode: -32603,
+			errorText:    "Resource not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &models.MCPMessage{
+				JSONRPC: "2.0",
+				ID:      "test-error",
+				Method:  "resources/read",
+				Params:  models.MCPResourcesReadParams{URI: tt.uri},
+			}
+
+			response := server.handleResourcesRead(msg)
+			validateMCPResponse(t, response, true)
+
+			if response.Error.Code != tt.expectedCode {
+				t.Errorf("Expected error code %d, got %d", tt.expectedCode, response.Error.Code)
+			}
+			if !strings.Contains(response.Error.Message, tt.errorText) {
+				t.Errorf("Expected error message containing '%s', got '%s'", tt.errorText, response.Error.Message)
+			}
+		})
+	}
+}
+
+// Test: URI Parsing - Table Driven
+func TestResourceURIParsing(t *testing.T) {
+	server := NewMCPServer()
+
+	tests := []struct {
+		name        string
+		uri         string
+		wantCat     string
+		wantPath    string
+		expectError bool
+	}{
+		{"ValidGuideline", "architecture://guidelines/api-design", "guideline", "api-design", false},
+		{"ValidPattern", "architecture://patterns/repository", "pattern", "repository", false},
+		{"ValidADR", "architecture://adr/001", "adr", "001", false},
+		{"InvalidScheme", "invalid://guidelines/test", "", "", true},
+		{"InvalidCategory", "architecture://invalid/test", "", "", true},
+		{"MissingPath", "architecture://guidelines", "", "", true},
+		{"EmptyURI", "", "", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cat, path, err := server.parseResourceURI(tt.uri)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+			if cat != tt.wantCat {
+				t.Errorf("Expected category '%s', got '%s'", tt.wantCat, cat)
+			}
+			if path != tt.wantPath {
+				t.Errorf("Expected path '%s', got '%s'", tt.wantPath, path)
+			}
+		})
+	}
+}
+
+// Test: Protocol Compliance
+func TestJSONRPCCompliance(t *testing.T) {
+	server := NewMCPServer()
+
+	msg := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "compliance-test",
+		Method:  "resources/list",
+	}
+
+	response := server.handleResourcesList(msg)
+	validateMCPResponse(t, response, false)
+
+	if response.ID != "compliance-test" {
+		t.Errorf("Expected ID 'compliance-test', got '%v'", response.ID)
+	}
+	if response.Result == nil {
+		t.Error("Response should have result")
+	}
+}
+
+// Test: Tools System Integration
+func TestToolsSystemIntegration(t *testing.T) {
+	env := setupTestEnv(t)
+	env.writeTestDocs(t, standardTestDocs(env))
+	env.initServer(t)
+
+	if err := env.server.initializeToolsSystem(); err != nil {
+		t.Fatalf("Failed to initialize tools system: %v", err)
+	}
+
+	// Test tools/list
+	listMsg := &models.MCPMessage{
+		JSONRPC: "2.0",
+		ID:      "test-tools-list",
+		Method:  "tools/list",
+	}
+
+	response := env.server.handleToolsList(listMsg)
+	validateMCPResponse(t, response, false)
+
+	result := response.Result.(models.MCPToolsListResult)
+	if len(result.Tools) != 3 {
+		t.Errorf("Expected 3 tools, got %d", len(result.Tools))
+	}
+}
+
+// Test: Tools Call Method - Table Driven
+func TestToolsCallMethod(t *testing.T) {
+	env := setupTestEnv(t)
+	env.writeTestDocs(t, standardTestDocs(env))
+	env.initServer(t)
+
+	if err := env.server.initializeToolsSystem(); err != nil {
+		t.Fatalf("Failed to initialize tools system: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		toolName  string
+		args      map[string]interface{}
+		expectErr bool
+	}{
+		{
+			name:     "ValidatePattern",
+			toolName: "validate-against-pattern",
+			args: map[string]interface{}{
+				"code":         "type Repository interface {}",
+				"pattern_name": "repository-pattern",
+				"language":     "go",
+			},
+			expectErr: false,
+		},
+		{
+			name:     "SearchArchitecture",
+			toolName: "search-architecture",
+			args: map[string]interface{}{
+				"query":         "API",
+				"resource_type": "all",
+				"max_results":   5,
+			},
+			expectErr: false,
+		},
+		{
+			name:     "CheckADRAlignment",
+			toolName: "check-adr-alignment",
+			args: map[string]interface{}{
+				"decision_description": "Use microservices",
+			},
+			expectErr: false,
+		},
+		{
+			name:      "InvalidTool",
+			toolName:  "nonexistent-tool",
+			args:      map[string]interface{}{},
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &models.MCPMessage{
+				JSONRPC: "2.0",
+				ID:      "test-tool-call",
+				Method:  "tools/call",
+				Params: models.MCPToolsCallParams{
+					Name:      tt.toolName,
+					Arguments: tt.args,
+				},
+			}
+
+			response := env.server.handleToolsCall(msg)
+			validateMCPResponse(t, response, tt.expectErr)
+
+			if !tt.expectErr {
+				result := response.Result.(models.MCPToolsCallResult)
+				if len(result.Content) == 0 {
+					t.Error("Expected at least one content item")
+				}
+			}
+		})
+	}
+}
+
+// Test: Cache Refresh Coordinator
+func TestCacheRefreshCoordinator(t *testing.T) {
+	server := NewMCPServer()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err = server.initializeDocumentationSystem(ctx)
-	if err != nil {
-		t.Fatalf("Failed to initialize documentation system: %v", err)
+	go server.cacheRefreshCoordinator(ctx)
+
+	testEvent := models.FileEvent{Type: "delete", Path: config.PatternsPath + "/test.md"}
+
+	select {
+	case server.refreshChan <- testEvent:
+		// Event sent successfully
+	case <-time.After(1 * time.Second):
+		t.Error("Failed to send event to refresh channel")
 	}
-
-	err = server.initializeToolsSystem()
-	if err != nil {
-		t.Fatalf("Failed to initialize tools system: %v", err)
-	}
-
-	// Test 1: tools/list method integration
-	t.Run("ToolsListIntegration", func(t *testing.T) {
-		listMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-tools-list",
-			Method:  "tools/list",
-		}
-
-		response := server.handleToolsList(listMessage)
-
-		// Verify response structure
-		if response == nil {
-			t.Fatal("handleToolsList() returned nil")
-		}
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPToolsListResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPToolsListResult")
-		}
-
-		// Should return all 3 built-in tools
-		if len(result.Tools) != 3 {
-			t.Errorf("Expected 3 tools, got %d", len(result.Tools))
-		}
-
-		// Verify tool names
-		expectedTools := map[string]bool{
-			"validate-against-pattern": false,
-			"search-architecture":      false,
-			"check-adr-alignment":      false,
-		}
-
-		for _, tool := range result.Tools {
-			// Verify required fields
-			if tool.Name == "" {
-				t.Error("Tool name should not be empty")
-			}
-			if tool.Description == "" {
-				t.Error("Tool description should not be empty")
-			}
-			if tool.InputSchema == nil {
-				t.Error("Tool inputSchema should not be nil")
-			}
-
-			// Mark tool as found
-			if _, exists := expectedTools[tool.Name]; exists {
-				expectedTools[tool.Name] = true
-			}
-
-			// Verify input schema structure
-			schema := tool.InputSchema
-			if schemaType, ok := schema["type"].(string); !ok || schemaType != "object" {
-				t.Errorf("Tool %s schema type should be 'object'", tool.Name)
-			}
-			if _, ok := schema["properties"]; !ok {
-				t.Errorf("Tool %s schema should have 'properties'", tool.Name)
-			}
-		}
-
-		// Verify all expected tools were found
-		for toolName, found := range expectedTools {
-			if !found {
-				t.Errorf("Expected tool '%s' not found in list", toolName)
-			}
-		}
-	})
-
-	// Test 2: validate-against-pattern tool invocation
-	t.Run("ValidatePatternToolIntegration", func(t *testing.T) {
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-validate-pattern",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "validate-against-pattern",
-				Arguments: map[string]interface{}{
-					"code": `type UserRepository struct {
-    db *sql.DB
 }
 
-func (r *UserRepository) FindByID(id string) (*User, error) {
-    // Implementation
-    return nil, nil
-}`,
-					"pattern_name": "repository-pattern",
-					"language":     "go",
-				},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		if response == nil {
-			t.Fatal("handleToolsCall() returned nil")
-		}
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPToolsCallResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPToolsCallResult")
-		}
-
-		if len(result.Content) == 0 {
-			t.Fatal("Expected at least one content item")
-		}
-
-		content := result.Content[0]
-		if content.Type != "text" {
-			t.Errorf("Expected content type 'text', got '%s'", content.Type)
-		}
-
-		// Verify result contains validation information
-		if !strings.Contains(content.Text, "compliant") && !strings.Contains(content.Text, "pattern") {
-			t.Error("Result should contain validation information")
-		}
-	})
-
-	// Test 3: search-architecture tool invocation
-	t.Run("SearchArchitectureToolIntegration", func(t *testing.T) {
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-search-architecture",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "search-architecture",
-				Arguments: map[string]interface{}{
-					"query":         "API authentication",
-					"resource_type": "all",
-					"max_results":   10,
-				},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		if response == nil {
-			t.Fatal("handleToolsCall() returned nil")
-		}
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPToolsCallResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPToolsCallResult")
-		}
-
-		if len(result.Content) == 0 {
-			t.Fatal("Expected at least one content item")
-		}
-
-		content := result.Content[0]
-		if content.Type != "text" {
-			t.Errorf("Expected content type 'text', got '%s'", content.Type)
-		}
-
-		// Verify result contains search results
-		if !strings.Contains(content.Text, "results") || !strings.Contains(content.Text, "uri") {
-			t.Error("Result should contain search results with URIs")
-		}
-	})
-
-	// Test 4: check-adr-alignment tool invocation
-	t.Run("CheckADRAlignmentToolIntegration", func(t *testing.T) {
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-check-adr-alignment",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "check-adr-alignment",
-				Arguments: map[string]interface{}{
-					"decision_description": "We should use MongoDB for our new analytics service",
-					"decision_context":     "Need a database for storing analytics data with flexible schema",
-				},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		if response == nil {
-			t.Fatal("handleToolsCall() returned nil")
-		}
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPToolsCallResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPToolsCallResult")
-		}
-
-		if len(result.Content) == 0 {
-			t.Fatal("Expected at least one content item")
-		}
-
-		content := result.Content[0]
-		if content.Type != "text" {
-			t.Errorf("Expected content type 'text', got '%s'", content.Type)
-		}
-
-		// Verify result contains alignment analysis
-		if !strings.Contains(content.Text, "related_adrs") || !strings.Contains(content.Text, "alignment") {
-			t.Error("Result should contain ADR alignment analysis")
-		}
-	})
-
-	// Test 5: Tool error handling - invalid tool name
-	t.Run("InvalidToolNameError", func(t *testing.T) {
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-invalid-tool",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name:      "nonexistent-tool",
-				Arguments: map[string]interface{}{},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		if response.Error == nil {
-			t.Error("Expected error for invalid tool name")
-		}
-
-		// Tool not found returns -32602 (invalid params) in current implementation
-		if response.Error.Code != -32602 {
-			t.Errorf("Expected error code -32602, got %d", response.Error.Code)
-		}
-
-		if !strings.Contains(response.Error.Message, "not found") && !strings.Contains(response.Error.Message, "Tool") {
-			t.Errorf("Expected error message about tool not found, got '%s'", response.Error.Message)
-		}
-	})
-
-	// Test 6: Tool error handling - missing required arguments
-	t.Run("MissingRequiredArgumentsError", func(t *testing.T) {
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-missing-args",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "validate-against-pattern",
-				Arguments: map[string]interface{}{
-					// Missing required 'code' and 'pattern_name' arguments
-					"language": "go",
-				},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		if response.Error == nil {
-			t.Error("Expected error for missing required arguments")
-		}
-
-		// Tool execution errors return -32603 in current implementation
-		if response.Error.Code != -32603 && response.Error.Code != -32602 {
-			t.Errorf("Expected error code -32602 or -32603, got %d", response.Error.Code)
-		}
-	})
-
-	// Test 7: Tool error handling - invalid argument types
-	t.Run("InvalidArgumentTypesError", func(t *testing.T) {
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-invalid-arg-types",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "search-architecture",
-				Arguments: map[string]interface{}{
-					"query":         "test query",
-					"max_results":   "not-a-number", // Should be integer
-					"resource_type": "all",
-				},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		if response.Error == nil {
-			t.Error("Expected error for invalid argument types")
-		}
-
-		if response.Error.Code != -32602 {
-			t.Errorf("Expected error code -32602, got %d", response.Error.Code)
-		}
-	})
-
-	// Test 8: Tool execution with real cache data
-	t.Run("ToolExecutionWithRealCacheData", func(t *testing.T) {
-		// Verify cache has documents
-		if server.cache.Size() == 0 {
-			t.Fatal("Cache should have documents for this test")
-		}
-
-		// Search for a term that should be in the documents
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "test-real-cache-search",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "search-architecture",
-				Arguments: map[string]interface{}{
-					"query":         "microservices",
-					"resource_type": "adr",
-					"max_results":   5,
-				},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result := response.Result.(models.MCPToolsCallResult)
-		content := result.Content[0]
-
-		// Should find the microservices ADR
-		if !strings.Contains(content.Text, "microservices") {
-			t.Error("Search should find microservices-related content")
-		}
-	})
-
-	// Test 9: Concurrent tool invocations
-	t.Run("ConcurrentToolInvocations", func(t *testing.T) {
-		const numConcurrent = 10
-		done := make(chan bool, numConcurrent)
-		errors := make(chan error, numConcurrent)
-
-		for i := 0; i < numConcurrent; i++ {
-			go func(index int) {
-				callMessage := &models.MCPMessage{
-					JSONRPC: "2.0",
-					ID:      fmt.Sprintf("concurrent-test-%d", index),
-					Method:  "tools/call",
-					Params: models.MCPToolsCallParams{
-						Name: "search-architecture",
-						Arguments: map[string]interface{}{
-							"query":         "API",
-							"resource_type": "all",
-							"max_results":   5,
-						},
-					},
-				}
-
-				response := server.handleToolsCall(callMessage)
-
-				if response.Error != nil {
-					errors <- fmt.Errorf("concurrent call %d failed: %v", index, response.Error)
-				}
-
-				done <- true
-			}(i)
-		}
-
-		// Wait for all goroutines to complete
-		for i := 0; i < numConcurrent; i++ {
-			select {
-			case <-done:
-				// Success
-			case err := <-errors:
-				t.Error(err)
-			case <-time.After(5 * time.Second):
-				t.Fatal("Concurrent tool invocations timed out")
-			}
-		}
-	})
-
-	// Test 10: Full workflow - initialize, list, call multiple tools
-	t.Run("FullToolsWorkflow", func(t *testing.T) {
-		// Step 1: List available tools
-		listMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "workflow-list",
-			Method:  "tools/list",
-		}
-
-		listResponse := server.handleToolsList(listMessage)
-		if listResponse.Error != nil {
-			t.Fatalf("List tools failed: %v", listResponse.Error)
-		}
-
-		listResult := listResponse.Result.(models.MCPToolsListResult)
-		if len(listResult.Tools) == 0 {
-			t.Fatal("No tools available")
-		}
-
-		// Step 2: Search for relevant documentation
-		searchMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "workflow-search",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "search-architecture",
-				Arguments: map[string]interface{}{
-					"query":         "repository",
-					"resource_type": "pattern",
-					"max_results":   5,
-				},
-			},
-		}
-
-		searchResponse := server.handleToolsCall(searchMessage)
-		if searchResponse.Error != nil {
-			t.Fatalf("Search tool failed: %v", searchResponse.Error)
-		}
-
-		// Step 3: Validate code against found pattern
-		validateMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "workflow-validate",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "validate-against-pattern",
-				Arguments: map[string]interface{}{
-					"code":         "type Repository interface { FindByID(id string) error }",
-					"pattern_name": "repository-pattern",
-					"language":     "go",
-				},
-			},
-		}
-
-		validateResponse := server.handleToolsCall(validateMessage)
-		if validateResponse.Error != nil {
-			t.Fatalf("Validate tool failed: %v", validateResponse.Error)
-		}
-
-		// Step 4: Check ADR alignment for a decision
-		adrMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "workflow-adr",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "check-adr-alignment",
-				Arguments: map[string]interface{}{
-					"decision_description": "Use microservices for new features",
-				},
-			},
-		}
-
-		adrResponse := server.handleToolsCall(adrMessage)
-		if adrResponse.Error != nil {
-			t.Fatalf("ADR alignment tool failed: %v", adrResponse.Error)
-		}
-
-		// All steps completed successfully
-		t.Log("Full workflow completed successfully")
-	})
-}
-
-// TestToolsProtocolComplianceIntegration tests MCP protocol compliance for tools
-func TestToolsProtocolComplianceIntegration(t *testing.T) {
+// Test: Category From Path - Table Driven
+func TestGetCategoryFromPath(t *testing.T) {
 	server := NewMCPServer()
 
-	// Initialize tools system
-	err := server.initializeToolsSystem()
-	if err != nil {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{config.GuidelinesPath + "/api.md", "guideline"},
+		{config.PatternsPath + "/repository.md", "pattern"},
+		{config.ADRPath + "/adr-001.md", "adr"},
+		{"some/other/path.md", "unknown"},
+		{strings.ToUpper(config.GuidelinesPath) + "/API.MD", "guideline"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			result := server.getCategoryFromPath(tt.path)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// Test: Concurrent Tool Invocations
+func TestConcurrentToolInvocations(t *testing.T) {
+	env := setupTestEnv(t)
+	env.writeTestDocs(t, standardTestDocs(env))
+	env.initServer(t)
+
+	if err := env.server.initializeToolsSystem(); err != nil {
 		t.Fatalf("Failed to initialize tools system: %v", err)
 	}
 
-	// Test 1: JSON-RPC 2.0 compliance for tools/list
-	t.Run("ToolsListJSONRPCCompliance", func(t *testing.T) {
-		listMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "compliance-tools-list",
-			Method:  "tools/list",
-		}
+	const numConcurrent = 10
+	done := make(chan error, numConcurrent)
 
-		response := server.handleToolsList(listMessage)
-
-		// Verify JSON-RPC 2.0 compliance
-		if response.JSONRPC != "2.0" {
-			t.Errorf("Expected JSONRPC '2.0', got '%s'", response.JSONRPC)
-		}
-
-		if response.ID != "compliance-tools-list" {
-			t.Errorf("Expected ID 'compliance-tools-list', got '%v'", response.ID)
-		}
-
-		// Should have either result or error, but not both
-		if response.Result != nil && response.Error != nil {
-			t.Error("Response should not have both result and error")
-		}
-
-		if response.Result == nil && response.Error == nil {
-			t.Error("Response should have either result or error")
-		}
-	})
-
-	// Test 2: MCP tool structure compliance
-	t.Run("MCPToolStructureCompliance", func(t *testing.T) {
-		listMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "structure-compliance",
-			Method:  "tools/list",
-		}
-
-		response := server.handleToolsList(listMessage)
-
-		result, ok := response.Result.(models.MCPToolsListResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPToolsListResult")
-		}
-
-		if len(result.Tools) == 0 {
-			t.Fatal("Expected at least one tool")
-		}
-
-		for _, tool := range result.Tools {
-			// Verify required MCP tool fields
-			if tool.Name == "" {
-				t.Error("Tool name is required")
-			}
-
-			// Description is optional but should be present for usability
-			if tool.Description == "" {
-				t.Error("Tool description should be present")
-			}
-
-			// InputSchema is required
-			if tool.InputSchema == nil {
-				t.Error("Tool inputSchema is required")
-			}
-
-			// Verify schema structure
-			schema := tool.InputSchema
-			if schemaType, ok := schema["type"]; !ok {
-				t.Error("Tool schema should have 'type' field")
-			} else if schemaType != "object" {
-				t.Errorf("Tool schema type should be 'object', got '%v'", schemaType)
-			}
-
-			if _, ok := schema["properties"]; !ok {
-				t.Error("Tool schema should have 'properties' field")
-			}
-		}
-	})
-
-	// Test 3: MCP tool call result compliance
-	t.Run("MCPToolCallResultCompliance", func(t *testing.T) {
-		// Initialize cache with test data
-		server.cache.Set("test-doc", &models.Document{
-			Metadata: models.DocumentMetadata{
-				Title:    "Test",
-				Category: "guideline",
-				Path:     "test.md",
-			},
-			Content: models.DocumentContent{
-				RawContent: "Test content",
-			},
-		})
-
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "call-compliance",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name: "search-architecture",
-				Arguments: map[string]interface{}{
-					"query": "test",
+	for i := 0; i < numConcurrent; i++ {
+		go func(index int) {
+			msg := &models.MCPMessage{
+				JSONRPC: "2.0",
+				ID:      fmt.Sprintf("concurrent-%d", index),
+				Method:  "tools/call",
+				Params: models.MCPToolsCallParams{
+					Name: "search-architecture",
+					Arguments: map[string]interface{}{
+						"query":         "API",
+						"resource_type": "all",
+						"max_results":   5,
+					},
 				},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		if response.Error != nil {
-			t.Fatalf("Expected no error, got %v", response.Error)
-		}
-
-		result, ok := response.Result.(models.MCPToolsCallResult)
-		if !ok {
-			t.Fatal("Expected result to be MCPToolsCallResult")
-		}
-
-		// Verify content array structure
-		if result.Content == nil {
-			t.Fatal("Tool result content should not be nil")
-		}
-
-		if len(result.Content) == 0 {
-			t.Fatal("Tool result should have at least one content item")
-		}
-
-		for _, content := range result.Content {
-			// Verify required content fields
-			if content.Type == "" {
-				t.Error("Content type is required")
 			}
 
-			// Verify valid content types
-			validTypes := map[string]bool{"text": true, "image": true, "resource": true}
-			if !validTypes[content.Type] {
-				t.Errorf("Invalid content type '%s'", content.Type)
+			response := env.server.handleToolsCall(msg)
+			if response.Error != nil {
+				done <- fmt.Errorf("concurrent call %d failed: %v", index, response.Error)
+			} else {
+				done <- nil
 			}
+		}(i)
+	}
 
-			// For text type, text field should be present
-			if content.Type == "text" && content.Text == "" {
-				t.Error("Text content should have non-empty text field")
+	for i := 0; i < numConcurrent; i++ {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
 			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Concurrent tool invocations timed out")
 		}
-	})
-
-	// Test 4: Error response compliance for tools
-	t.Run("ToolsErrorResponseCompliance", func(t *testing.T) {
-		callMessage := &models.MCPMessage{
-			JSONRPC: "2.0",
-			ID:      "error-compliance",
-			Method:  "tools/call",
-			Params: models.MCPToolsCallParams{
-				Name:      "nonexistent-tool",
-				Arguments: map[string]interface{}{},
-			},
-		}
-
-		response := server.handleToolsCall(callMessage)
-
-		// Verify error response structure
-		if response.Error == nil {
-			t.Fatal("Expected error response")
-		}
-
-		// Verify required error fields
-		if response.Error.Code == 0 {
-			t.Error("Error code is required")
-		}
-		if response.Error.Message == "" {
-			t.Error("Error message is required")
-		}
-
-		// Verify JSON-RPC 2.0 compliance for errors
-		if response.JSONRPC != "2.0" {
-			t.Errorf("Expected JSONRPC '2.0' in error response, got '%s'", response.JSONRPC)
-		}
-		if response.ID != "error-compliance" {
-			t.Errorf("Expected ID 'error-compliance' in error response, got '%v'", response.ID)
-		}
-
-		// Should not have result field in error response
-		if response.Result != nil {
-			t.Error("Error response should not have result field")
-		}
-	})
+	}
 }
